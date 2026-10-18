@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f1f2f4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0c0d10" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -63,6 +63,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { background: var(--bg); }
+/* 横にずれないようにする（iPhone でははみ出しが1pxでもあると左右に動く） */
+html { overflow-x: hidden; overscroll-behavior-x: none; }
+body { overflow-x: clip; max-width: 100%; }
 body { color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; padding-inline: 16px; padding-block: 0; -webkit-text-size-adjust: 100%; }
 main { max-width: 480px; margin: 0 auto; padding-block: 16px 120px; }
 h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
@@ -240,7 +243,7 @@ th small { display: block; color: var(--muted); font-weight: 500; }
 .check[aria-pressed="true"] { background: var(--c, var(--ok)); }
 .check[aria-pressed="true"]::after { content: ""; position: absolute; left: 19px; top: 10px; width: 8px; height: 16px; border: solid var(--surface); border-width: 0 3px 3px 0; transform: rotate(45deg); }
 .notefield { display: flex; flex-direction: column; gap: 6px; }
-textarea { width: 100%; padding: 10px 12px; font-size: 15px; resize: vertical; background: var(--surface); }
+textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; background: var(--surface); }
 .card textarea { background: var(--surface-2); }
 .next { font-size: 18px; }
 .titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -284,10 +287,10 @@ textarea { width: 100%; padding: 10px 12px; font-size: 15px; resize: vertical; b
 /* 種目の差し替え */
 .swaplist li { align-items: center; }
 .exsel { min-width: 0; flex: 1; }
-.exsel select { font: inherit; font-size: 14px; width: 100%; min-height: 40px; padding: 0 28px 0 8px; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 10px center; appearance: none; -webkit-appearance: none; border-radius: 10px; text-overflow: ellipsis; }
+.exsel select { font: inherit; font-size: 16px; width: 100%; min-height: 40px; padding: 0 28px 0 8px; background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 10px center; appearance: none; -webkit-appearance: none; border-radius: 10px; text-overflow: ellipsis; }
 
 .customex { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; flex-wrap: wrap; }
-.customex input { flex: 1 1 100%; min-width: 0; min-height: 40px; padding: 0 10px; font-size: 15px; background: var(--surface); }
+.customex input { flex: 1 1 100%; min-width: 0; min-height: 40px; padding: 0 10px; font-size: 16px; background: var(--surface); }
 
 
 /* はじめの選択肢 */
