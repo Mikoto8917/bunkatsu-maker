@@ -31,10 +31,24 @@
     const rec = L.recommend(state.answers, state.levelOverride);
     const chosen = rec.ranked.find((r) => r.tpl.id === state.choice) || rec.best;
     const fitted = state.fitTime === false ? null : L.fitToTime(chosen, state.answers.sessionMin);
-    const menus = L.applyExerciseSwaps(L.buildMenus(fitted || chosen, state.answers.goal), state.exSwap, state.answers.goal);
+    const swapped = L.applyExerciseSwaps(L.buildMenus(fitted || chosen, state.answers.goal), state.exSwap, state.answers.goal);
+    const menus = applyOrder(swapped);
     const byWeekday = {};
     chosen.weekdays.forEach((d, i) => { byWeekday[d] = i; });
     return { rec, chosen, menus, byWeekday, fitted };
+  }
+
+  // 長押しで並び替えた順番（提案プラン用）。menus は元のメニュー番号の並び、items は元の種目名の並び
+  function applyOrder(menus) {
+    const o = state.order || {};
+    const withSrc = menus.map((m, i) => {
+      const names = (o.items || {})[i];
+      if (!names) return { ...m, src: i };
+      const pos = (it) => { const j = names.indexOf(it.original || it.name); return j < 0 ? 999 : j; };
+      return { ...m, src: i, items: m.items.map((it, n) => [it, n]).sort((a, b) => pos(a[0]) - pos(b[0]) || a[1] - b[1]).map((x) => x[0]) };
+    });
+    const perm = o.menus && o.menus.length === menus.length ? o.menus : null;
+    return perm ? perm.map((j) => withSrc[j]) : withSrc;
   }
 
   function lastSessionIdx() {
@@ -453,14 +467,14 @@
   // プログラム画面：オリジナルプランのメニュー編集
   function customMenusHtml(p) {
     return p.menus.map((m, i) => `
-      <details class="menu c-${m.color}" data-menu="${i}" ${openMenus.has(i) ? 'open' : ''}>
-        <summary><span class="pip"></span><b>${esc(m.label)}</b><span class="muted small">${L.WEEKDAYS[p.chosen.weekdays[i]]}曜・${m.items.length}種目・${m.minutes}分</span></summary>
-        <ol class="citems">${m.items.map((it, n) => {
+      <details class="menu c-${m.color}" data-menu="${i}" data-sort-i="${i}" ${openMenus.has(i) ? 'open' : ''}>
+        <summary data-grip><span class="pip"></span><b>${esc(m.label)}</b><span class="muted small">${L.WEEKDAYS[p.chosen.weekdays[i]]}曜・${m.items.length}種目・${m.minutes}分</span></summary>
+        <ol class="citems" data-sort="items:${i}">${m.items.map((it, n) => {
           const names = exerciseNames(it.muscle);
           if (!names.includes(it.name)) names.push(it.name);
           const editing = customOpen === `${i}-${n}`;
-          return `<li class="citem">
-            <div class="citemtop">
+          return `<li class="citem" data-sort-i="${n}">
+            <div class="citemtop"><span class="grip" data-grip aria-hidden="true"></span>
               ${editing ? `<form class="customex" data-custom-sess="${i}" data-custom-n="${n}" data-custom-muscle="${it.muscle}">
                 <label class="sr" for="cx-${i}-${n}">${esc(L.MUSCLES[it.muscle].name)}の種目名</label>
                 <input id="cx-${i}-${n}" type="text" maxlength="30" placeholder="例：${esc(L.MUSCLES[it.muscle].name)}のマシン" autocomplete="off">
@@ -891,8 +905,8 @@
       const prevTxt = prev ? `前回 ${prev.sets.map((s) => `${s.w}×${s.r}`).join('・')}` : '前回の記録なし';
       const allDone = li.sets.every((s) => s.done);
       return `
-      <li class="ex ${allDone ? 'is-done' : ''}">
-        <div class="exhead">
+      <li class="ex ${allDone ? 'is-done' : ''}" data-sort-i="${n}">
+        <div class="exhead" data-grip>
           <h3>${esc(it.name)}</h3>
           <span class="sxr num">${li.sets.length}×${esc(it.reps)}</span>
         </div>
@@ -924,7 +938,8 @@
         </div>
         ${picker}
       </div>
-      <ol class="exlist">${items}</ol>
+      <ol class="exlist" data-sort="log">${items}</ol>
+      ${lg.items.length > 1 ? '<p class="muted small sorthint">種目名を長押しすると、順番を入れ替えられます。</p>' : ''}
       <label class="notefield"><span class="eyebrow">この日のメモ</span>
         <textarea id="day-note" rows="2" placeholder="腰の調子、眠気など">${esc(lg.note || '')}</textarea>
       </label>
@@ -961,22 +976,22 @@
     const { rec, chosen } = p;
     const targets = planMuscles(p).map((m) => `<li><span>${L.MUSCLES[m].name}</span><b class="num">${rec.targets[m]}</b></li>`).join('');
     const menus = p.menus.map((m, i) => `
-      <details class="menu c-${m.color}" data-menu="${i}" ${openMenus.has(i) ? 'open' : ''}>
-        <summary><span class="pip"></span><b>${esc(m.label)}</b><span class="muted small">${chosen.weekdays[i] !== undefined ? L.WEEKDAYS[chosen.weekdays[i]] + '曜' : ''}・${m.minutes}分</span></summary>
-        <ul class="daymenu swaplist">${m.items.map((it, n) => {
+      <details class="menu c-${m.color}" data-menu="${i}" data-sort-i="${i}" ${openMenus.has(i) ? 'open' : ''}>
+        <summary data-grip><span class="pip"></span><b>${esc(m.label)}</b><span class="muted small">${chosen.weekdays[i] !== undefined ? L.WEEKDAYS[chosen.weekdays[i]] + '曜' : ''}・${m.minutes}分</span></summary>
+        <ul class="daymenu swaplist" data-sort="items:${i}">${m.items.map((it, n) => {
           const orig = it.original || it.name;
           const names = exerciseNames(it.muscle);
           if (!names.includes(it.name)) names.push(it.name);
           const editing = customOpen === `${i}-${n}`;
-          return `<li>
-          ${editing ? `<form class="customex" data-custom-sess="${i}" data-custom-orig="${esc(orig)}" data-custom-muscle="${it.muscle}">
+          return `<li data-sort-i="${n}"><span class="grip" data-grip aria-hidden="true"></span>
+          ${editing ? `<form class="customex" data-custom-sess="${m.src}" data-custom-orig="${esc(orig)}" data-custom-muscle="${it.muscle}">
               <label class="sr" for="cx-${i}-${n}">${esc(L.MUSCLES[it.muscle].name)}の種目名</label>
               <input id="cx-${i}-${n}" type="text" maxlength="30" placeholder="例：${esc(L.MUSCLES[it.muscle].name)}のマシン" autocomplete="off">
               <button class="btn tiny primary" type="submit">決定</button>
               <button class="btn tiny ghost" type="button" data-act="customcancel">やめる</button>
             </form>`
           : `<label class="exsel"><span class="sr">${esc(it.name)}を差し替える</span>
-            <select id="sw-${i}-${n}" data-swap-sess="${i}" data-swap-orig="${esc(orig)}" data-swap-n="${n}">
+            <select id="sw-${i}-${n}" data-swap-sess="${m.src}" data-swap-orig="${esc(orig)}" data-swap-n="${n}" data-pos="${i}">
               ${names.map((nm) => `<option value="${esc(nm)}" ${nm === it.name ? 'selected' : ''}>${esc(nm)}${nm === orig && it.original ? '（元の種目）' : ''}</option>`).join('')}
               <option value="__custom__">＋ 候補にない種目を入力…</option>
             </select></label>`}
@@ -1018,7 +1033,8 @@
       <div class="card">
         <p class="eyebrow">メニュー</p>
         <p class="muted small">${p.custom ? '種目名をタップして種目を変え、セット数と回数も自由に変えられます。候補にない種目は「＋ 候補にない種目を入力」から追加できます。' : '種目名をタップすると、器具がないときや苦手なときの代わりの種目に差し替えられます。候補にない種目は「＋ 候補にない種目を入力」から自由に追加できます。セット数や回数も変えたいときは「このプランをもとに自分用に編集する」を使ってください。'}</p>
-        <div class="menus">${p.custom ? customMenusHtml(p) : menus}</div>
+        <p class="muted small sorthint">メニュー名や種目の左の「⋮⋮」を長押しすると、順番を入れ替えられます。メニューを入れ替えると、曜日の割り当ても入れ替わります。</p>
+        <div class="menus" data-sort="menus">${p.custom ? customMenusHtml(p) : menus}</div>
       </div>
       <div class="card">
         <p class="eyebrow">部位ごとの週セット${p.custom ? '（プランの合計）' : '目標'}</p>
@@ -1486,7 +1502,7 @@
       return;
     }
     if (e.target.dataset.swapSess !== undefined && e.target.value === '__custom__') {
-      customOpen = `${e.target.dataset.swapSess}-${e.target.dataset.swapN}`;
+      customOpen = `${e.target.dataset.pos}-${e.target.dataset.swapN}`;
       render();
       const inp = document.getElementById(`cx-${customOpen}`);
       if (inp) inp.focus();
@@ -1528,6 +1544,119 @@
     customOpen = null;
     save(); render();
   });
+
+  // ---------- 長押しで並び替え ----------
+  // [data-sort] の中の [data-sort-i] を、[data-grip] を長押ししてから指を動かして入れ替える
+  const HOLD_MS = 450;
+  let drag = null;
+  let holdTimer = null;
+  let suppressClick = false;
+
+  function cancelHold() { clearTimeout(holdTimer); holdTimer = null; }
+
+  $app.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const grip = e.target.closest('[data-grip]');
+    if (!grip || e.target.closest('input, select, textarea, button, form')) return;
+    const item = grip.closest('[data-sort-i]');
+    const list = item && item.parentElement.closest('[data-sort]');
+    if (!list || item.parentElement !== list || list.children.length < 2) return;
+    const x0 = e.clientX, y0 = e.clientY;
+    cancelHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      // メニューを動かすときは、開いているメニューを閉じて短くしてから持ち上げる
+      if (item.tagName === 'DETAILS') list.querySelectorAll(':scope > details[open]').forEach((d) => { d.open = false; });
+      // 記録の種目はセットの欄を隠して、短くしてから動かす（CSS の .is-sorting）
+      list.classList.add('is-sorting');
+      drag = { item, list, y0: e.clientY, top0: item.getBoundingClientRect().top, id: e.pointerId };
+      // 縮んで位置がずれたら、指の下に来るようにスクロールで合わせる
+      const r = item.getBoundingClientRect();
+      if (y0 < r.top || y0 > r.bottom) { window.scrollBy(0, r.top + r.height / 2 - y0); drag.top0 = item.getBoundingClientRect().top; }
+      item.classList.add('is-lifted');
+      if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* 振動できない端末 */ } }
+    }, HOLD_MS);
+    const moveBeforeHold = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancelHold(); };
+    const stop = () => { cancelHold(); window.removeEventListener('pointermove', moveBeforeHold); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); };
+    window.addEventListener('pointermove', moveBeforeHold);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    e.preventDefault();
+    const { item, list } = drag;
+    const y = e.clientY;
+    // 指の位置が隣の項目の真ん中を越えたら入れ替える
+    const sibs = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined);
+    let before = null;
+    for (const c of sibs) { const r = c.getBoundingClientRect(); if (y < r.top + r.height / 2) { before = c; break; } }
+    if (before !== item.nextElementSibling || (!before && list.lastElementChild !== item)) {
+      if (before) list.insertBefore(item, before); else list.appendChild(item);
+    }
+    const natural = item.getBoundingClientRect().top - (parseFloat(item.dataset.dy) || 0);
+    const dy = drag.top0 + (y - drag.y0) - natural;
+    item.dataset.dy = dy;
+    item.style.transform = `translateY(${dy}px)`;
+    // 画面の端に来たらスクロール
+    if (y < 70) window.scrollBy(0, -8); else if (y > innerHeight - 130) window.scrollBy(0, 8);
+  }, { passive: false });
+
+  // 持ち上げている間は画面がスクロールしないようにする（iPhone は touchmove を止める必要がある）
+  window.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
+  $app.addEventListener('contextmenu', (e) => { if (drag || holdTimer || e.target.closest('[data-grip]')) e.preventDefault(); });
+
+  function endDrag() {
+    if (!drag) return;
+    const { item, list } = drag;
+    drag = null;
+    item.classList.remove('is-lifted'); list.classList.remove('is-sorting');
+    item.style.transform = ''; delete item.dataset.dy;
+    suppressClick = true; setTimeout(() => { suppressClick = false; }, 350);
+    const order = [...list.children].filter((c) => c.dataset.sortI !== undefined).map((c) => +c.dataset.sortI);
+    if (order.every((v, i) => v === i)) return;
+    applySort(list.dataset.sort, order);
+  }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  // 並び替えのあとに続くタップ（メニューの開閉など）は無視する
+  $app.addEventListener('click', (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); suppressClick = false; } }, true);
+
+  // order は「新しい並びの i 番目に、元の何番目が来るか」
+  function applySort(kind, order) {
+    if (kind === 'log') {
+      const lg = state.logs[logKey()];
+      lg.items = order.map((j) => lg.items[j]);
+      lg.touched = true;
+    } else if (kind === 'menus') {
+      if (state.custom) state.custom.menus = order.map((j) => state.custom.menus[j]);
+      else {
+        state.order = state.order || {};
+        const cur = state.order.menus && state.order.menus.length === order.length ? state.order.menus : order.map((_, i) => i);
+        state.order.menus = order.map((j) => cur[j]);
+      }
+      // これまでの記録と「この日のメニュー変更」を、新しい番号に付け替える
+      const to = (old) => (old >= 0 ? order.indexOf(old) : old);
+      Object.values(state.logs).forEach((lg) => { if (lg && lg.session >= 0 && order.indexOf(lg.session) >= 0) lg.session = to(lg.session); });
+      Object.keys(state.swap).forEach((k) => { state.swap[k] = to(state.swap[k]); });
+      const open = [...openMenus]; openMenus.clear(); open.forEach((i) => openMenus.add(order.indexOf(i)));
+      customOpen = null;
+    } else if (kind.startsWith('items:')) {
+      const i = +kind.slice(6);
+      if (state.custom) {
+        const m = state.custom.menus[i];
+        m.items = order.map((j) => m.items[j]);
+      } else {
+        const m = currentPlan().menus[i];
+        state.order = state.order || {};
+        state.order.items = state.order.items || {};
+        state.order.items[m.src] = order.map((j) => m.items[j].original || m.items[j].name);
+      }
+      customOpen = null;
+    }
+    save(); render();
+  }
 
   // 開いているメニューを覚えておく（描画し直しても閉じないように）
   $app.addEventListener('toggle', (e) => {

@@ -17,7 +17,7 @@
 <title>分割メーカー</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
 /* MacroFactor風：明るい地にカードを積むダッシュボード。数字を大きく、目標と実績を円とバーで並べる。超過しても赤くしない */
 :root {
@@ -39,8 +39,9 @@
   --c-pull: #2b7de9;
   --c-legs: #1f9d63;
   --c-arms: #cc4f8e;
-  --font-display: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
-  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-display: "Yu Gothic", YuGothic, "游ゴシック", "游ゴシック体", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  /* 游ゴシック（Windows・Mac）。スマホには入っていないので、iPhone はヒラギノ、Android は Noto Sans JP になる */
+  --font-body: "Yu Gothic", YuGothic, "游ゴシック", "游ゴシック体", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --r: 18px;
   color-scheme: light;
@@ -66,7 +67,7 @@ html, body { background: var(--bg); }
 /* 横にずれないようにする（iPhone でははみ出しが1pxでもあると左右に動く） */
 html { overflow-x: hidden; overscroll-behavior-x: none; }
 body { overflow-x: clip; max-width: 100%; }
-body { color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6; padding-inline: 16px; padding-block: 0; -webkit-text-size-adjust: 100%; }
+body { color: var(--fg); font-family: var(--font-body); font-weight: 500; font-size: 16px; line-height: 1.6; padding-inline: 16px; padding-block: 0; -webkit-text-size-adjust: 100%; }
 main { max-width: 480px; margin: 0 auto; padding-block: 16px 120px; }
 h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--font-display); }
 p { margin: 0; }
@@ -328,7 +329,7 @@ textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; b
 .stepper span { min-width: 3.2em; text-align: center; font-size: 15px; font-weight: 600; }
 .stepper small { font-size: 11px; color: var(--muted); margin-left: 2px; font-family: var(--font-body); }
 .repsfield { display: flex; align-items: baseline; gap: 4px; margin-left: auto; }
-.repsfield input { width: 4.4em; min-height: 40px; padding: 0 8px; font-family: var(--font-num); text-align: right; }
+.repsfield input { width: 5.6em; min-height: 40px; padding: 0 8px; font-family: var(--font-num); text-align: right; }
 .repsfield span { color: var(--muted); }
 .cadd { display: flex; gap: 8px; padding: 0 10px 12px; }
 .cadd select { flex: 1; min-width: 0; min-height: 40px; padding: 0 8px; background: var(--surface); }
@@ -380,6 +381,19 @@ textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; b
 #rest .rest-bar span { display: block; height: 100%; background: var(--accent); }
 #rest.is-over .rest-inner { background: var(--ok); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* 長押しで並び替え */
+[data-grip] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.grip { flex: none; align-self: stretch; width: 22px; margin-left: -4px; display: flex; align-items: center; justify-content: center; color: var(--muted); cursor: grab; touch-action: none; }
+.grip::before { content: "⋮⋮"; letter-spacing: -3px; font-size: 16px; line-height: 1; }
+.daymenu li { align-items: center; }
+.daymenu li .exsel { flex: 1; min-width: 0; }
+.citemtop { align-items: center; }
+.is-sorting [data-sort-i] { transition: transform .15s; }
+.is-sorting [data-sort-i].is-lifted { transition: none; }
+.is-lifted { position: relative; z-index: 3; box-shadow: 0 10px 28px rgba(0, 0, 0, .18); background: var(--surface); border-radius: 12px; }
+.sorthint { margin: 6px 2px 0; }
+.exlist.is-sorting .ex > :not(.exhead), .citems.is-sorting .citembottom { display: none; }
 </style>
 
 <main id="app" aria-live="polite"></main>
