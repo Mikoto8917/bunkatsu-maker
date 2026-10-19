@@ -1554,23 +1554,6 @@
 
   function cancelHold() { clearTimeout(holdTimer); holdTimer = null; }
 
-  // 入れ替えるときの「コトッ」という振動。Android は vibrate、iPhone（iOS 18 以降）は
-  // スイッチ型チェックボックスを切り替えたときに鳴る触覚フィードバックを使う
-  let hapticEl = null;
-  function tick(ms) {
-    try {
-      if (navigator.vibrate) { navigator.vibrate(ms || 8); return; }
-      if (!hapticEl) {
-        hapticEl = document.createElement('label');
-        hapticEl.setAttribute('aria-hidden', 'true');
-        hapticEl.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none';
-        hapticEl.innerHTML = '<input type="checkbox" switch tabindex="-1">';
-        document.body.appendChild(hapticEl);
-      }
-      hapticEl.click();
-    } catch (err) { /* 振動できない端末 */ }
-  }
-
   $app.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     const touch = e.pointerType !== 'mouse';
@@ -1605,7 +1588,6 @@
       line.className = 'sortline';
       document.body.appendChild(line);
       drag.ghost = ghost; drag.line = line; drag.offY = off; drag.ins = null;
-      tick(15);
     }, HOLD_MS);
     const moveBeforeHold = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancelHold(); };
     const stop = () => { cancelHold(); window.removeEventListener('pointermove', moveBeforeHold); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); };
@@ -1621,8 +1603,6 @@
     const sibs = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined);
     let ins = sibs.length;
     for (let i = 0; i < sibs.length; i++) { const r = sibs[i].getBoundingClientRect(); if (y < r.top + r.height / 2) { ins = i; break; } }
-    // 入る場所が変わるたびに、コトッと振動させる
-    if (drag.ins !== null && drag.ins !== ins) tick(8);
     drag.ins = ins;
     // 元の場所と同じなら線を出さない
     const cur = [...list.children].filter((c) => c.dataset.sortI !== undefined).indexOf(item);
@@ -1659,7 +1639,6 @@
     if (ins === null) return;
     const order = others.slice(0, ins).concat(+item.dataset.sortI, others.slice(ins));
     if (order.every((v, i) => v === i)) return;
-    tick(12);
     applySort(list.dataset.sort, order);
   }
   window.addEventListener('pointerup', () => { if (drag && !drag.touch) endDrag(); });
