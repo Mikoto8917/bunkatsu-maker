@@ -1574,6 +1574,18 @@
       const r = item.getBoundingClientRect();
       if (y0 < r.top || y0 > r.bottom) { window.scrollBy(0, r.top + r.height / 2 - y0); drag.top0 = item.getBoundingClientRect().top; }
       item.classList.add('is-lifted');
+      // Notion のように、元の場所は薄く残し、指には半透明のコピーが付いてきて、入る場所に青い線を出す
+      const rr = item.getBoundingClientRect();
+      const ghost = item.cloneNode(true);
+      ghost.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+      ghost.removeAttribute('data-sort-i'); ghost.classList.remove('is-lifted'); ghost.classList.add('sortghost');
+      ghost.setAttribute('aria-hidden', 'true');
+      Object.assign(ghost.style, { left: rr.left + 'px', top: rr.top + 'px', width: rr.width + 'px' });
+      document.body.appendChild(ghost);
+      const line = document.createElement('div');
+      line.className = 'sortline';
+      document.body.appendChild(line);
+      drag.ghost = ghost; drag.line = line; drag.offY = drag.y0 - rr.top; drag.ins = null;
       if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* 振動できない端末 */ } }
     }, HOLD_MS);
     const moveBeforeHold = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancelHold(); };
@@ -1586,19 +1598,23 @@
   window.addEventListener('pointermove', (e) => {
     if (!drag) return;
     e.preventDefault();
-    const { item, list } = drag;
+    const { item, list, ghost, line } = drag;
     const y = e.clientY;
-    // 指の位置が隣の項目の真ん中を越えたら入れ替える
+    ghost.style.top = (y - drag.offY) + 'px';
+    // 指の位置から入る場所（ほかの項目の何番目の前か）を決める。項目そのものは動かさない
     const sibs = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined);
-    let before = null;
-    for (const c of sibs) { const r = c.getBoundingClientRect(); if (y < r.top + r.height / 2) { before = c; break; } }
-    if (before !== item.nextElementSibling || (!before && list.lastElementChild !== item)) {
-      if (before) list.insertBefore(item, before); else list.appendChild(item);
+    let ins = sibs.length;
+    for (let i = 0; i < sibs.length; i++) { const r = sibs[i].getBoundingClientRect(); if (y < r.top + r.height / 2) { ins = i; break; } }
+    drag.ins = ins;
+    // 元の場所と同じなら線を出さない
+    const cur = [...list.children].filter((c) => c.dataset.sortI !== undefined).indexOf(item);
+    const lr = list.getBoundingClientRect();
+    if (ins === cur) { line.style.display = 'none'; } else {
+      const gapY = ins < sibs.length
+        ? (ins > 0 ? (sibs[ins - 1].getBoundingClientRect().bottom + sibs[ins].getBoundingClientRect().top) / 2 : sibs[0].getBoundingClientRect().top - 3)
+        : sibs[sibs.length - 1].getBoundingClientRect().bottom + 3;
+      Object.assign(line.style, { display: 'block', top: (gapY - 1.5) + 'px', left: lr.left + 'px', width: lr.width + 'px' });
     }
-    const natural = item.getBoundingClientRect().top - (parseFloat(item.dataset.dy) || 0);
-    const dy = drag.top0 + (y - drag.y0) - natural;
-    item.dataset.dy = dy;
-    item.style.transform = `translateY(${dy}px)`;
     // 画面の端に来たらスクロール
     if (y < 70) window.scrollBy(0, -8); else if (y > innerHeight - 130) window.scrollBy(0, 8);
   }, { passive: false });
@@ -1609,12 +1625,14 @@
 
   function endDrag() {
     if (!drag) return;
-    const { item, list } = drag;
+    const { item, list, ghost, line, ins } = drag;
     drag = null;
+    ghost.remove(); line.remove();
     item.classList.remove('is-lifted'); list.classList.remove('is-sorting');
-    item.style.transform = ''; delete item.dataset.dy;
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 350);
-    const order = [...list.children].filter((c) => c.dataset.sortI !== undefined).map((c) => +c.dataset.sortI);
+    const others = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined).map((c) => +c.dataset.sortI);
+    if (ins === null) return;
+    const order = others.slice(0, ins).concat(+item.dataset.sortI, others.slice(ins));
     if (order.every((v, i) => v === i)) return;
     applySort(list.dataset.sort, order);
   }
