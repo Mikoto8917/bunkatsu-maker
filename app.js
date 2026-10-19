@@ -1033,7 +1033,7 @@
       <div class="card">
         <p class="eyebrow">メニュー</p>
         <p class="muted small">${p.custom ? '種目名をタップして種目を変え、セット数と回数も自由に変えられます。候補にない種目は「＋ 候補にない種目を入力」から追加できます。' : '種目名をタップすると、器具がないときや苦手なときの代わりの種目に差し替えられます。候補にない種目は「＋ 候補にない種目を入力」から自由に追加できます。セット数や回数も変えたいときは「このプランをもとに自分用に編集する」を使ってください。'}</p>
-        <p class="muted small sorthint">メニュー名や種目の左の「⋮⋮」を長押しすると、順番を入れ替えられます。メニューを入れ替えると、曜日の割り当ても入れ替わります。</p>
+        <p class="muted small sorthint">メニュー名や種目名を長押しすると、順番を入れ替えられます（パソコンでは種目の左の「⋮⋮」）。メニューを入れ替えると、曜日の割り当ても入れ替わります。</p>
         <div class="menus" data-sort="menus">${p.custom ? customMenusHtml(p) : menus}</div>
       </div>
       <div class="card">
@@ -1556,8 +1556,11 @@
 
   $app.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
-    const grip = e.target.closest('[data-grip]');
-    if (!grip || e.target.closest('input, select, textarea, button, form')) return;
+    const touch = e.pointerType !== 'mouse';
+    // 指で操作するときは、プログラムの種目名（選択欄）を長押ししても動かせる（記録の種目名と同じ感覚）
+    const selGrip = touch && e.target.closest('select') && e.target.closest('[data-sort^="items:"] > [data-sort-i]');
+    const grip = selGrip || e.target.closest('[data-grip]');
+    if (!grip || (!selGrip && e.target.closest('input, select, textarea, button, form'))) return;
     const item = grip.closest('[data-sort-i]');
     const list = item && item.parentElement.closest('[data-sort]');
     if (!list || item.parentElement !== list || list.children.length < 2) return;
@@ -1569,10 +1572,8 @@
       if (item.tagName === 'DETAILS') list.querySelectorAll(':scope > details[open]').forEach((d) => { d.open = false; });
       // 記録の種目はセットの欄を隠して、短くしてから動かす（CSS の .is-sorting）
       list.classList.add('is-sorting');
-      drag = { item, list, y0: e.clientY, top0: item.getBoundingClientRect().top, id: e.pointerId };
-      // 縮んで位置がずれたら、指の下に来るようにスクロールで合わせる
-      const r = item.getBoundingClientRect();
-      if (y0 < r.top || y0 > r.bottom) { window.scrollBy(0, r.top + r.height / 2 - y0); drag.top0 = item.getBoundingClientRect().top; }
+      // 指で押している間にスクロールさせると iPhone は操作を取り消すので、位置は動かさずにコピーだけ指の下に出す
+      drag = { item, list, y0, touch };
       item.classList.add('is-lifted');
       // Notion のように、元の場所は薄く残し、指には半透明のコピーが付いてきて、入る場所に青い線を出す
       const rr = item.getBoundingClientRect();
@@ -1580,12 +1581,13 @@
       ghost.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
       ghost.removeAttribute('data-sort-i'); ghost.classList.remove('is-lifted'); ghost.classList.add('sortghost');
       ghost.setAttribute('aria-hidden', 'true');
-      Object.assign(ghost.style, { left: rr.left + 'px', top: rr.top + 'px', width: rr.width + 'px' });
+      const off = y0 >= rr.top && y0 <= rr.bottom ? y0 - rr.top : Math.min(24, rr.height / 2);
+      Object.assign(ghost.style, { left: rr.left + 'px', top: (y0 - off) + 'px', width: rr.width + 'px' });
       document.body.appendChild(ghost);
       const line = document.createElement('div');
       line.className = 'sortline';
       document.body.appendChild(line);
-      drag.ghost = ghost; drag.line = line; drag.offY = drag.y0 - rr.top; drag.ins = null;
+      drag.ghost = ghost; drag.line = line; drag.offY = off; drag.ins = null;
       if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* 振動できない端末 */ } }
     }, HOLD_MS);
     const moveBeforeHold = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancelHold(); };
@@ -1595,11 +1597,8 @@
     window.addEventListener('pointercancel', stop);
   });
 
-  window.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    e.preventDefault();
+  function dragMove(y) {
     const { item, list, ghost, line } = drag;
-    const y = e.clientY;
     ghost.style.top = (y - drag.offY) + 'px';
     // 指の位置から入る場所（ほかの項目の何番目の前か）を決める。項目そのものは動かさない
     const sibs = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined);
@@ -1617,10 +1616,17 @@
     }
     // 画面の端に来たらスクロール
     if (y < 70) window.scrollBy(0, -8); else if (y > innerHeight - 130) window.scrollBy(0, 8);
+  }
+  // マウスは pointer イベント、指は touch イベントで動かす（iPhone は途中で pointercancel が来ることがあるため）
+  window.addEventListener('pointermove', (e) => { if (drag && !drag.touch) { e.preventDefault(); dragMove(e.clientY); } }, { passive: false });
+  window.addEventListener('touchmove', (e) => {
+    if (!drag) return;
+    e.preventDefault(); // 持ち上げている間は画面をスクロールさせない
+    if (e.touches[0]) dragMove(e.touches[0].clientY);
   }, { passive: false });
-
-  // 持ち上げている間は画面がスクロールしないようにする（iPhone は touchmove を止める必要がある）
-  window.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
+  const touchEnd = (e) => { if (drag) { if (e.cancelable) e.preventDefault(); endDrag(); } };
+  window.addEventListener('touchend', touchEnd, { passive: false });
+  window.addEventListener('touchcancel', touchEnd, { passive: false });
   $app.addEventListener('contextmenu', (e) => { if (drag || holdTimer || e.target.closest('[data-grip]')) e.preventDefault(); });
 
   function endDrag() {
@@ -1636,8 +1642,8 @@
     if (order.every((v, i) => v === i)) return;
     applySort(list.dataset.sort, order);
   }
-  window.addEventListener('pointerup', endDrag);
-  window.addEventListener('pointercancel', endDrag);
+  window.addEventListener('pointerup', () => { if (drag && !drag.touch) endDrag(); });
+  window.addEventListener('pointercancel', () => { if (drag && !drag.touch) endDrag(); });
   // 並び替えのあとに続くタップ（メニューの開閉など）は無視する
   $app.addEventListener('click', (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); suppressClick = false; } }, true);
 

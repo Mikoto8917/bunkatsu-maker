@@ -1,5 +1,5 @@
-// オフラインでも開けるように、アプリ本体をキャッシュする。中身が変わると ccb58e38 が変わり、古いキャッシュを捨てる
-const CACHE = 'bunkatsu-ccb58e38';
+// オフラインでも開けるように、アプリ本体をキャッシュする。中身が変わると 506ed33f が変わり、古いキャッシュを捨てる
+const CACHE = 'bunkatsu-506ed33f';
 const FILES = ['./', 'index.html', 'logic.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
