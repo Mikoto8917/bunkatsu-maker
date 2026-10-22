@@ -857,6 +857,7 @@
 
   // ---------- 記録（日付ごと） ----------
   let logDate = null;
+  const unfolded = new Set(); // たたんだ種目のうち、開いているもの（日付|番号）
   function vLog() {
     const p = currentPlan();
     const d = logDate ? parseKey(logDate) : today();
@@ -904,11 +905,22 @@
       const prev = previous(it.name, k);
       const prevTxt = prev ? `前回 ${prev.sets.map((s) => `${s.w}×${s.r}`).join('・')}` : '前回の記録なし';
       const allDone = li.sets.every((s) => s.done);
+      // 全セット終わった種目は1行にたたむ（タップで開ける）。今やる種目に集中できるように
+      const fkey = `${k}|${n}`;
+      if (allDone && !unfolded.has(fkey)) {
+        return `
+      <li class="ex is-done is-folded" data-sort-i="${n}">
+        <div class="exhead" data-grip>
+          <h3>${esc(it.name)}</h3>
+          <button class="foldbtn num" data-act="exunfold" data-k="${esc(fkey)}" aria-expanded="false" aria-label="${esc(it.name)}のセットを表示">✓ ${li.sets.length}セット完了</button>
+        </div>
+      </li>`;
+      }
       return `
       <li class="ex ${allDone ? 'is-done' : ''}" data-sort-i="${n}">
         <div class="exhead" data-grip>
           <h3>${esc(it.name)}</h3>
-          <span class="sxr num">${li.sets.length}×${esc(it.reps)}</span>
+          ${allDone ? `<button class="foldbtn num" data-act="exfold" data-k="${esc(fkey)}" aria-expanded="true">たたむ</button>` : `<span class="sxr num">${li.sets.length}×${esc(it.reps)}</span>`}
         </div>
         <p class="exmeta"><span class="mtag">${L.MUSCLES[it.muscle].name}</span><span class="prev num">${esc(prevTxt)}</span>
           ${state.restOn === false ? '' : `<button class="restchip num" data-act="restpick" data-name="${esc(it.name)}" data-kind="${it.kind || 'compound'}" aria-label="${esc(it.name)}の休憩時間を変更">休憩 ${fmtSec(restFor(it.name, it.kind))}</button>`}</p>
@@ -923,7 +935,7 @@
             </li>`;
           }).join('')}
         </ol>
-        <div class="setbtns"><button class="linkbtn small" data-act="addset" data-ex="${n}">＋ セットを追加</button>${li.sets.length > 1 && !li.sets[li.sets.length - 1].done ? `<button class="linkbtn small muted" data-act="delset" data-ex="${n}">− 最後のセットを削除</button>` : ''}</div>
+        <div class="setbtns"><button class="linkbtn small" data-act="addset" data-ex="${n}">＋ セットを追加</button>${li.sets.length > 1 && !li.sets[li.sets.length - 1].done ? `<button class="delset" data-act="delset" data-ex="${n}">最後のセットを削除</button>` : ''}</div>
       </li>`;
     }).join('');
     return `
@@ -1027,13 +1039,12 @@
           <button class="linkbtn small" data-act="start">質問に答えて提案を受ける</button>
         </div>` : `<div class="stack">
           <button class="btn ghost" data-act="showresult">提案の理由と別案を見る</button>
-          <button class="btn ghost" data-act="custom-from">このプランをもとに自分用に編集する</button>
+          <button class="btn ghost" data-act="custom-from">自分用に編集する</button>
         </div>`}
       </div>
       <div class="card">
         <p class="eyebrow">メニュー</p>
-        <p class="muted small">${p.custom ? '種目名をタップして種目を変え、セット数と回数も自由に変えられます。候補にない種目は「＋ 候補にない種目を入力」から追加できます。' : '種目名をタップすると、器具がないときや苦手なときの代わりの種目に差し替えられます。候補にない種目は「＋ 候補にない種目を入力」から自由に追加できます。セット数や回数も変えたいときは「このプランをもとに自分用に編集する」を使ってください。'}</p>
-        <p class="muted small sorthint">メニュー名や種目名を長押しすると、順番を入れ替えられます（パソコンでは種目の左の「⋮⋮」）。メニューを入れ替えると、曜日の割り当ても入れ替わります。</p>
+        <p class="hint"><small>タップで種目を変更・長押しで並び替え</small></p>
         <div class="menus" data-sort="menus">${p.custom ? customMenusHtml(p) : menus}</div>
       </div>
       <div class="card">
@@ -1390,6 +1401,8 @@
         save(); go('dash'); break;
       }
       case 'pickopen': pickOpen = !pickOpen; render(); break;
+      case 'exunfold': unfolded.add(b.dataset.k); render(); break;
+      case 'exfold': unfolded.delete(b.dataset.k); render(); break;
       case 'swap': {
         const k = logKey();
         const i = +b.dataset.i;
