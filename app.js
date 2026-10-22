@@ -8,12 +8,49 @@
 
   // ---------- 保存 ----------
   function blank() { return { answers: null, choice: null, levelOverride: null, logs: {}, swap: {}, checkins: [], sample: false, restDefault: null, restByEx: {}, exSwap: {}, customEx: {}, custom: null, weights: {}, restOn: true }; }
+  const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+  // 保存データ・バックアップの形をそろえる。形が合わない部分は捨てて、アプリが止まらないようにする
+  function sanitize(s) {
+    const out = Object.assign(blank(), s);
+    ['logs', 'swap', 'restByEx', 'exSwap', 'customEx', 'weights'].forEach((k) => { if (!isObj(out[k])) out[k] = {}; });
+    if (!Array.isArray(out.checkins)) out.checkins = [];
+    Object.keys(out.logs).forEach((k) => {
+      const lg = out.logs[k];
+      const ok = isObj(lg) && Number.isInteger(lg.session) && Array.isArray(lg.items)
+        && lg.items.every((it) => isObj(it) && typeof it.name === 'string' && Array.isArray(it.sets) && it.sets.every(isObj));
+      if (!ok || !/^\d{4}-\d{2}-\d{2}$/.test(k)) delete out.logs[k];
+    });
+    Object.keys(out.swap).forEach((k) => { if (!Number.isInteger(out.swap[k])) delete out.swap[k]; });
+    if (out.custom !== null && !(isObj(out.custom) && Array.isArray(out.custom.menus) && Array.isArray(out.custom.weekdays))) out.custom = null;
+    if (out.answers !== null && !isObj(out.answers)) out.answers = null;
+    return out;
+  }
+  // そのデータで主な画面が描けるか試す（描けなければ使わない）
+  function usable(s) {
+    if (!s.answers) return true;
+    const keep = state;
+    try {
+      state = s;
+      const p = currentPlan();
+      if (!p || !p.menus.length) return false;
+      vDash(); vLog(); vProgram(); vMore();
+      return true;
+    } catch (e) { return false; } finally { state = keep; }
+  }
   function load() {
-    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') return Object.assign(blank(), s); } catch (e) { /* 読めなければ新規 */ }
+    try { const s = JSON.parse(localStorage.getItem(KEY)); if (isObj(s)) return sanitize(s); } catch (e) { /* 読めなければ新規 */ }
     return blank();
   }
   let state = load();
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 保存できない環境でも動かす */ } }
+  // 見ただけの日（入力も完了もメモもない記録）は保存しない
+  const emptyLog = (lg) => !lg.touched && !lg.note && (lg.items || []).every((it) => it.sets.every((x) => !x.done && x.w === '' && x.r === ''));
+  function save() {
+    try {
+      const logs = {};
+      Object.keys(state.logs).forEach((k) => { if (!emptyLog(state.logs[k])) logs[k] = state.logs[k]; });
+      localStorage.setItem(KEY, JSON.stringify({ ...state, logs }));
+    } catch (e) { /* 保存できない環境でも動かす */ }
+  }
 
   // ---------- 小物 ----------
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -66,7 +103,9 @@
     // 記録が入った日は、記録したメニューを優先する
     if (state.logs[k] && doneSets(state.logs[k]) > 0) return state.logs[k].session;
     if (state.swap[k] !== undefined) return state.swap[k];
-    if (state.answers.schedule === 'irregular') {
+    if (state.answers.schedule === 'irregular' && !state.custom) {
+      // 毎週バラバラのときは曜日が決まっていないので、今日だけ「次のメニュー」を出し、ほかの日は休み扱いにする
+      if (k !== dateKey(today())) return -1;
       const last = lastSessionIdx();
       if (last && last.key === k) return last.idx;
       return last ? (last.idx + 1) % plan.menus.length : 0;
@@ -95,6 +134,7 @@
   let view = state.answers ? 'dash' : 'welcome';
   let quizStep = 0;
   let draft = null;
+  let wdOrder = []; // 曜日を選んだ順番
   let pickOpen = false;
   let openDay = null;
 
@@ -105,7 +145,21 @@
     $tabs.hidden = !tabbed;
     $tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-current', b.dataset.v === view ? 'page' : 'false'));
     const fn = { welcome: vWelcome, quiz: vQuiz, result: vResult, dash: vDash, log: vLog, program: vProgram, more: vMore, checkin: vCheckin, builder: vBuilder }[view];
-    $app.innerHTML = fn();
+    try {
+      $app.innerHTML = fn();
+    } catch (err) {
+      // 保存データが壊れていて描けないときは、真っ白にせず、データを書き出してから初期化できる画面を出す
+      $tabs.hidden = true;
+      let dump = '';
+      try { dump = localStorage.getItem(KEY) || JSON.stringify(state); } catch (e) { dump = ''; }
+      $app.innerHTML = `
+      <section class="welcome">
+        <h1 class="title">データを読み込めませんでした</h1>
+        <p>保存されているデータの形がこわれているため、画面を表示できません。下の文字列はいまのデータです。必要ならコピーして残してから、初期化してください。</p>
+        <textarea readonly rows="6" class="small">${esc(dump)}</textarea>
+        <button class="btn primary" data-act="reset-yes">データを初期化してはじめから</button>
+      </section>`;
+    }
     $app.dataset.view = view;
   }
 
@@ -264,6 +318,7 @@
         <p class="small">目標どおりだと1回最長${chosen.detail.maxMin}分で、${chosen.detail.limit}分を超えます。</p>
         <label class="switch"><input id="fit-time" type="checkbox" data-act="fit" ${state.fitTime === false ? '' : 'checked'}><span>${chosen.detail.limit}分に収まるようにセット数を減らす</span></label>
         ${p.fitted && cut ? `<p class="muted small">週あたり ${esc(cut)} セット減らしています。時間に余裕がある日は目標まで足してください。</p>` : ''}
+        ${p.fitted && p.fitted.over ? `<p class="small warn">この分割は部位が多いため、各部位を最低2セットにしても1回 ${p.fitted.minMinutes}分かかり、${p.fitted.limit}分には収まりません。時間を優先するなら、部位の少ない分割（上下分割など）を選んでください。</p>` : ''}
       </div>`;
     const reduced = chosen.reduced ? `<p class="badge-line"><span class="badge">週${chosen.tpl.days}日に減らす案</span></p>` : '';
     const rows = rec.ranked.map((r, i) => `
@@ -536,6 +591,11 @@
   }
 
   function nextTraining(p, d) {
+    if (state.answers.schedule === 'irregular' && !state.custom) {
+      const last = lastSessionIdx();
+      const j = last ? (last.idx + 1) % p.menus.length : 0;
+      return { label: p.menus[j].label, when: '次回', color: p.menus[j].color };
+    }
     for (let i = 1; i <= 7; i++) {
       const dd = addDays(d, i);
       const j = sessionFor(p, dd);
@@ -897,7 +957,6 @@
 
     const menu = p.menus[idx];
     const lg = ensureLog(k, idx, menu);
-    save();
     const total = lg.items.reduce((a, b) => a + b.sets.length, 0);
     const done = doneSets(lg);
     const items = lg.items.map((li, n) => {
@@ -1301,7 +1360,14 @@
       case 'wd': {
         const v = +b.dataset.val; const arr = draft.weekdays;
         const i = arr.indexOf(v);
-        if (i >= 0) arr.splice(i, 1); else if (arr.length < draft.days) arr.push(v);
+        // 選んだ順番を覚えておく（最初から選ばれていた曜日は古い扱い）
+        wdOrder = arr.filter((x) => !wdOrder.includes(x)).concat(wdOrder.filter((x) => arr.includes(x)));
+        if (i >= 0) { arr.splice(i, 1); wdOrder = wdOrder.filter((x) => x !== v); }
+        else {
+          // もう日数分選んでいるときは、いちばん前に選んだ曜日と入れ替える
+          if (arr.length >= draft.days) { const old = wdOrder.shift(); arr.splice(arr.indexOf(old), 1); }
+          arr.push(v); wdOrder.push(v);
+        }
         arr.sort((x, y) => x - y);
         render(); break;
       }
@@ -1445,10 +1511,12 @@
       case 'import': {
         const txt = document.getElementById('import-box').value.trim();
         try {
-          const s = JSON.parse(txt);
-          if (!s || !s.answers || typeof s.logs !== 'object') throw new Error('bad');
-          state = Object.assign(blank(), s); save();
-          importMsg = { ok: true, text: `復元しました（記録 ${Object.keys(state.logs).length}日分）。` };
+          const raw = JSON.parse(txt);
+          if (!isObj(raw) || !isObj(raw.answers) || !isObj(raw.logs)) throw new Error('bad');
+          const s = sanitize(raw);
+          if (!usable(s)) throw new Error('unusable');
+          state = s; save();
+          importMsg = { ok: true, text: `復元しました（記録 ${Object.keys(state.logs).filter((k) => !emptyLog(state.logs[k])).length}日分）。` };
         } catch (err) { importMsg = { ok: false, text: '読み込めませんでした。バックアップの文字列を最初から最後まで貼り付けてください。' }; }
         render(); break;
       }

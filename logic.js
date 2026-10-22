@@ -362,7 +362,10 @@
         trimmed[ms[0]] = (trimmed[ms[0]] || 0) + 1;
       }
     });
-    return { ...plan, sets, minutes: sets.map((s) => sum(s) * SET_MINUTES), trimmed };
+    const minutes = sets.map((s) => sum(s) * SET_MINUTES);
+    // 部位ごと最低2セットまで減らしても収まらないとき（全身法の45分など）は、そのことを返す
+    const over = Math.max(...minutes) > limit;
+    return { ...plan, sets, minutes, trimmed, over, limit, minMinutes: Math.max(...minutes) };
   }
 
   const api = {
