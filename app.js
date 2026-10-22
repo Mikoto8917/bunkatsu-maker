@@ -1849,7 +1849,8 @@
   let holdTimer = null;
   let suppressClick = false;
 
-  function cancelHold() { clearTimeout(holdTimer); holdTimer = null; }
+  let holdItem = null;
+  function cancelHold() { clearTimeout(holdTimer); holdTimer = null; if (holdItem) { holdItem.classList.remove('is-holding'); holdItem = null; } }
 
   $app.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
@@ -1863,8 +1864,10 @@
     if (!list || item.parentElement !== list || (list.children.length < 2 && list.dataset.sort !== 'log')) return;
     const x0 = e.clientX, y0 = e.clientY;
     cancelHold();
+    holdItem = item; item.classList.add('is-holding');
     holdTimer = setTimeout(() => {
       holdTimer = null;
+      item.classList.remove('is-holding'); holdItem = null;
       // メニューを動かすときは、開いているメニューを閉じて短くしてから持ち上げる
       if (item.tagName === 'DETAILS') list.querySelectorAll(':scope > details[open]').forEach((d) => { d.open = false; });
       // 記録の種目はセットの欄を隠して、短くしてから動かす（CSS の .is-sorting）

@@ -458,6 +458,17 @@ textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; b
 [data-sort-i] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 [data-sort-i] input, [data-sort-i] textarea { -webkit-user-select: text; user-select: text; }
 .is-lifted { opacity: .35; }
+/* 長押しの手ごたえ：押している間は少しずつ縮み、持ち上がるとコピーがふわっと浮く */
+[data-sort-i] { transition: transform .15s ease; }
+.is-holding { transform: scale(.97); transition: transform .45s ease; }
+.sortghost { box-shadow: 0 12px 28px rgb(0 0 0 / .18); animation: liftpop .18s ease-out; }
+@keyframes liftpop { from { transform: scale(.97); } 60% { transform: scale(1.04); } to { transform: scale(1.02); } }
+.sortghost { transform: scale(1.02); }
+.exmenu { animation: fadein .15s ease-out; }
+.exmenu .sheet { animation: sheetup .22s ease-out; }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes sheetup { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .is-holding, .sortghost, .exmenu, .exmenu .sheet { animation: none; transition: none; } }
 .sortghost { position: fixed; z-index: 60; margin: 0; pointer-events: none; opacity: .95; background: var(--surface); border-radius: 12px; list-style: none; outline: 2px solid var(--accent-soft); }
 .sortghost.ex > :not(.exhead), .sortghost .citembottom, .sortghost .daymenu, .sortghost .citems { display: none; }
 .sortline { position: fixed; z-index: 61; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; display: none; }
@@ -495,8 +506,8 @@ textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; b
   <button data-v="program"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>プログラム</button>
   <button data-v="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>その他</button>
 </nav>
-<script src="logic.js?v=c40f3f7a"></script>
-<script src="app.js?v=c40f3f7a"></script>
+<script src="logic.js?v=86211abc"></script>
+<script src="app.js?v=86211abc"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* 登録できなくても普通に動く */ }); });
