@@ -229,7 +229,17 @@ th small { display: block; color: var(--muted); font-weight: 500; }
 .exhead h3 { font-size: 17px; min-width: 0; }
 .ex.is-folded { padding-block: 10px; }
 .ex.is-folded .exhead { align-items: center; }
-.ex.is-folded .exhead h3 { color: var(--muted); font-size: 16px; }
+.ex.is-done.is-folded .exhead h3 { color: var(--muted); font-size: 16px; }
+.exhead { cursor: pointer; }
+.ex.is-folded:not(.is-done) .foldbtn { color: var(--muted); }
+.foldarr { margin-left: 6px; font-size: 11px; }
+.logadd { margin: 12px 0; }
+.logadd.is-open { padding: 12px 0 4px; }
+.logadd .cadd { padding: 0 12px 10px; }
+.logadd .cadd input { flex: 1; min-width: 0; min-height: 40px; padding: 0 8px; }
+.logadd .cadd select { background: var(--surface-2); }
+.logadd #la-m { flex: 0 0 38%; }
+.logadd p { padding: 0 12px; }
 .foldbtn { font: inherit; font-size: 14px; font-weight: 700; color: var(--ok); background: none; border: 0; padding: 6px 0; min-height: 36px; cursor: pointer; white-space: nowrap; }
 .ex:not(.is-folded) .foldbtn { color: var(--muted); }
 .sxr { font-size: 15px; font-weight: 600; color: var(--c, var(--fg)); white-space: nowrap; }

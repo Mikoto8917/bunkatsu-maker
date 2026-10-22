@@ -492,7 +492,7 @@
     const c = state.custom;
     const menus = c.menus.map((m) => ({ ...m, minutes: m.items.reduce((a, b) => a + b.sets, 0) * 3 }));
     const targets = {};
-    L.MUSCLE_ORDER.forEach((m) => { targets[m] = 0; });
+    L.PICK_ORDER.forEach((m) => { targets[m] = 0; });
     menus.forEach((m) => m.items.forEach((it) => { targets[it.muscle] += it.sets; }));
     const chosen = { tpl: { id: 'custom', name: c.name || 'オリジナルプラン', days: menus.length, family: 'custom' }, weekdays: c.weekdays, sessions: menus, reason: [], detail: {} };
     const rec = { level: c.level, targets, experience: { level: c.level, per: [], source: 'custom' }, ranked: [chosen], best: chosen };
@@ -502,7 +502,7 @@
   }
 
   // 目標セット数がある部位だけ（オリジナルプランで鍛えない部位は出さない）
-  const planMuscles = (p) => L.MUSCLE_ORDER.filter((m) => p.rec.targets[m] > 0);
+  const planMuscles = (p) => L.PICK_ORDER.filter((m) => p.rec.targets[m] > 0);
 
   let bdraft = null;
   let bmsg = '';
@@ -514,9 +514,9 @@
       const p = currentPlan();
       d.name = state.custom ? state.custom.name : `${p.chosen.tpl.name}（自分用）`;
       d.level = p.rec.level;
-      p.chosen.weekdays.forEach((wd, i) => { const m = p.menus[i]; d.days[wd] = { on: true, label: m.label, muscles: L.MUSCLE_ORDER.filter((x) => m.items.some((it) => it.muscle === x)) }; });
+      p.chosen.weekdays.forEach((wd, i) => { const m = p.menus[i]; d.days[wd] = { on: true, label: m.label, muscles: L.PICK_ORDER.filter((x) => m.items.some((it) => it.muscle === x)) }; });
       // 提案プランから作るときは、今のメニュー（差し替え・時間調整済み）をそのまま引き継ぐ
-      if (!state.custom) d.seed = { weekdays: p.chosen.weekdays.slice(), menus: p.menus.map((m) => ({ label: m.label, color: m.color, muscles: L.MUSCLE_ORDER.filter((x) => m.items.some((it) => it.muscle === x)), items: m.items.map(({ name, muscle, sets, reps, kind }) => ({ name, muscle, sets, reps, kind })) })) };
+      if (!state.custom) d.seed = { weekdays: p.chosen.weekdays.slice(), menus: p.menus.map((m) => ({ label: m.label, color: m.color, muscles: L.PICK_ORDER.filter((x) => m.items.some((it) => it.muscle === x)), items: m.items.map(({ name, muscle, sets, reps, kind }) => ({ name, muscle, sets, reps, kind })) })) };
     } else {
       [[0, '上半身', G_UPPER], [1, '下半身', G_LOWER], [3, '上半身', G_UPPER], [4, '下半身', G_LOWER]].forEach(([wd, label, ms]) => { d.days[wd] = { on: true, label, muscles: ms.slice() }; });
     }
@@ -534,9 +534,9 @@
         </div>
         ${day.on ? `
         <p class="blabel2">まとめて選ぶ</p>
-        <div class="presets">${PRESETS.map(([nm]) => `<button class="chip small" data-act="bpreset" data-wd="${wd}" data-p="${nm}">${nm}</button>`).join('')}</div>
+        <div class="presets">${PRESETS.map(([nm, ms]) => `<button class="chip small" data-act="bpreset" data-wd="${wd}" data-p="${nm}" aria-pressed="${ms.length === day.muscles.length && ms.every((m) => day.muscles.includes(m))}">${nm}</button>`).join('')}</div>
         <p class="blabel2">部位を1つずつ選ぶ</p>
-        <div class="mchips">${L.MUSCLE_ORDER.map((m) => `<button class="chip mchip" data-act="bmuscle" data-wd="${wd}" data-m="${m}" aria-pressed="${day.muscles.includes(m)}">${L.MUSCLES[m].name}</button>`).join('')}</div>` : ''}
+        <div class="mchips">${L.PICK_ORDER.map((m) => `<button class="chip mchip" data-act="bmuscle" data-wd="${wd}" data-m="${m}" aria-pressed="${day.muscles.includes(m)}">${L.MUSCLES[m].name}</button>`).join('')}</div>` : ''}
       </li>`).join('');
     const n = d.days.filter((x) => x.on).length;
     const editing = !!state.custom;
@@ -575,14 +575,14 @@
     if (empty) { bmsg = `${L.WEEKDAYS[empty.wd]}曜日の部位を選んでください。`; return false; }
     bmsg = '';
     const sessions = on.map((x) => {
-      const ms = L.MUSCLE_ORDER.filter((m) => x.muscles.includes(m));
+      const ms = L.PICK_ORDER.filter((m) => x.muscles.includes(m));
       return { label: x.label.trim() || PRESETS.find((p) => p[1].length === ms.length && p[1].every((m) => ms.includes(m)))?.[0] || '自由', muscles: ms, color: colorFor(ms) };
     });
     // 部位ごとの週セットの目安を、その部位を鍛える日に配分して種目を組む
     const used = new Set(sessions.flatMap((s) => s.muscles));
     const base = L.weeklyTargets(d.level, 'normal', []);
     const targets = {};
-    used.forEach((m) => { targets[m] = base[m]; });
+    used.forEach((m) => { targets[m] = base[m] != null ? base[m] : base.calves; });
     const sets = L.distribute(sessions, targets);
     const built = L.buildMenus({ sessions, sets, minutes: sets.map(() => 0) }, d.goal);
     // 部位が前と同じ曜日は、編集済みの種目を残す
@@ -643,7 +643,7 @@
         }).join('')}</ol>
         <div class="cadd">
           <label class="sr" for="cadd-${i}">追加する種目の部位</label>
-          <select id="cadd-${i}">${L.MUSCLE_ORDER.map((mm) => `<option value="${mm}" ${m.muscles[0] === mm ? 'selected' : ''}>${L.MUSCLES[mm].name}</option>`).join('')}</select>
+          <select id="cadd-${i}">${L.PICK_ORDER.map((mm) => `<option value="${mm}" ${m.muscles[0] === mm ? 'selected' : ''}>${L.MUSCLES[mm].name}</option>`).join('')}</select>
           <button class="btn tiny ghost" data-act="cadd" data-i="${i}">＋ 種目を追加</button>
         </div>
       </details>`).join('');
@@ -671,9 +671,16 @@
   function ensureLog(k, idx, menu) {
     let lg = state.logs[k];
     // 入力を始めた日（touched）は作り直さない。まだ何も触っていない日だけ、最新のメニューに合わせる
+    const fresh = (it) => ({ name: it.name, muscle: it.muscle, sets: Array.from({ length: it.sets }, () => ({ w: '', r: '', done: false })) });
     if (!lg || lg.session !== idx || (doneSets(lg) === 0 && !lg.touched)) {
-      lg = state.logs[k] = { session: idx, label: menu.label, items: menu.items.map((it) => ({ name: it.name, muscle: it.muscle, sets: Array.from({ length: it.sets }, () => ({ w: '', r: '', done: false })) })), note: (lg && lg.note) || '' };
+      const extra = lg && lg.session === idx ? lg.items.filter((it) => it.extra && !menu.items.some((x) => x.name === it.name)) : [];
+      lg = state.logs[k] = { session: idx, label: menu.label, items: menu.items.map(fresh).concat(extra), note: (lg && lg.note) || '' };
+      return lg;
     }
+    // 入力済みの日でも、プログラムで増えた種目は空のセットで末尾に足す。プログラムから消えて何も入力していない種目は外す
+    const blank = (it) => it.sets.every((x) => !x.done && x.w === '' && x.r === '');
+    lg.items = lg.items.filter((it) => it.extra || !blank(it) || menu.items.some((x) => x.name === it.name));
+    menu.items.forEach((it) => { if (!lg.items.some((x) => x.name === it.name)) lg.items.push(fresh(it)); });
     return lg;
   }
 
@@ -1005,7 +1012,29 @@
   // ---------- 記録（日付ごと） ----------
   let logDate = null;
   let rawOpen = false; // 「文字列でバックアップ」を開いているか
-  const unfolded = new Set(); // たたんだ種目のうち、開いているもの（日付|番号）
+  const foldSet = new Map(); // 種目ごとの開閉（日付|番号 → たたむなら true）。なければ、全セット終わった種目だけたたむ
+  // 記録画面の「＋ 種目を追加」。その日の記録だけに足す（プログラムは変えない）
+  let logAdd = null; // 開いているときは { muscle, msg }
+  function logAddView(lg, menu) {
+    if (!logAdd) return `<div class="logadd"><button class="btn ghost small" data-act="logaddopen">＋ 種目を追加</button></div>`;
+    const m = logAdd.muscle;
+    const names = L.exerciseOptions(m).map((o) => o.name).filter((nm) => !lg.items.some((x) => x.name === nm));
+    return `
+      <div class="card logadd is-open">
+        <p class="eyebrow">この日に種目を追加</p>
+        <div class="cadd">
+          <label class="sr" for="la-m">部位</label>
+          <select id="la-m">${L.PICK_ORDER.map((mm) => `<option value="${mm}" ${mm === m ? 'selected' : ''}>${L.MUSCLES[mm].name}</option>`).join('')}</select>
+          <label class="sr" for="la-x">種目</label>
+          <select id="la-x">${names.map((nm) => `<option>${esc(nm)}</option>`).join('')}<option value="">リストにない種目…</option></select>
+        </div>
+        <div class="cadd"><label class="sr" for="la-name">リストにない種目の名前</label><input id="la-name" type="text" maxlength="30" placeholder="リストにない種目はここに入力" autocomplete="off"></div>
+        ${logAdd.msg ? `<p class="warn small">${esc(logAdd.msg)}</p>` : ''}
+        <div class="cadd"><button class="btn tiny primary" data-act="logadd">追加する</button><button class="btn tiny ghost" data-act="logaddclose">やめる</button></div>
+        <p class="muted small">この日の記録だけに追加されます。プログラムは変わりません。</p>
+      </div>`;
+  }
+
   function vLog() {
     const p = currentPlan();
     const d = logDate ? parseKey(logDate) : today();
@@ -1053,22 +1082,24 @@
       const prevTxt = prev ? `前回 ${prev.sets.map((s) => `${s.w}×${s.r}`).join('・')}` : '前回の記録なし';
       const allDone = li.sets.every((s) => s.done);
       // 全セット終わった種目は1行にたたむ（タップで開ける）。今やる種目に集中できるように
+      // 種目名の行を押すと開閉する
       const fkey = `${k}|${n}`;
-      if (allDone && !unfolded.has(fkey)) {
-        return `
-      <li class="ex is-done is-folded" data-sort-i="${n}">
-        <div class="exhead" data-grip>
+      const folded = foldSet.has(fkey) ? foldSet.get(fkey) : allDone;
+      const nDone = li.sets.filter((s) => s.done).length;
+      const head = (open) => `
+        <div class="exhead" data-grip data-act="exfold" data-k="${esc(fkey)}" data-fold="${open}">
           <h3>${esc(it.name)}</h3>
-          <button class="foldbtn num" data-act="exunfold" data-k="${esc(fkey)}" aria-expanded="false" aria-label="${esc(it.name)}のセットを表示">✓ ${li.sets.length}セット完了</button>
-        </div>
+          <button class="foldbtn num" data-act="exfold" data-k="${esc(fkey)}" data-fold="${open}" aria-expanded="${!open}" aria-label="${esc(it.name)}のセットを${open ? 'たたむ' : '表示'}">${open
+            ? (allDone ? 'たたむ' : `${li.sets.length}${it.reps ? `×${esc(it.reps)}` : 'セット'}`)
+            : (allDone ? `✓ ${li.sets.length}セット完了` : `${nDone}/${li.sets.length}セット`)}<span class="foldarr" aria-hidden="true">${open ? '▴' : '▾'}</span></button>
+        </div>`;
+      if (folded) {
+        return `
+      <li class="ex ${allDone ? 'is-done' : ''} is-folded" data-sort-i="${n}">${head(false)}
       </li>`;
       }
       return `
-      <li class="ex ${allDone ? 'is-done' : ''}" data-sort-i="${n}">
-        <div class="exhead" data-grip>
-          <h3>${esc(it.name)}</h3>
-          ${allDone ? `<button class="foldbtn num" data-act="exfold" data-k="${esc(fkey)}" aria-expanded="true">たたむ</button>` : `<span class="sxr num">${li.sets.length}×${esc(it.reps)}</span>`}
-        </div>
+      <li class="ex ${allDone ? 'is-done' : ''}" data-sort-i="${n}">${head(true)}
         <p class="exmeta"><span class="mtag">${L.MUSCLES[it.muscle].name}</span><span class="prev num">${esc(prevTxt)}</span>
           ${prev && !allDone ? (() => { const g = progressTarget(prev.sets, it.reps, it.muscle, it.kind); return `<button class="copyprev" data-act="copyprev" data-ex="${n}" aria-label="${esc(it.name)}の前回の値から目標を入れる">目標をコピー ${g.up ? `↑${g.inc}kg` : '＋1回'}</button>`; })() : ''}
           ${state.restOn === false ? '' : `<button class="restchip num" data-act="restpick" data-name="${esc(it.name)}" data-kind="${it.kind || 'compound'}" aria-label="${esc(it.name)}の休憩時間を変更">休憩 ${fmtSec(restFor(it.name, it.kind))}</button>`}</p>
@@ -1099,7 +1130,8 @@
         ${picker}
       </div>
       <ol class="exlist" data-sort="log">${items}</ol>
-      ${lg.items.length > 1 ? '<p class="muted small sorthint">種目名を長押しすると、順番を入れ替えられます。</p>' : ''}
+      ${lg.items.length > 1 ? '<p class="muted small sorthint">種目名を押すと開閉、長押しで順番を入れ替えられます。</p>' : ''}
+      ${logAddView(lg, menu)}
       <label class="notefield"><span class="eyebrow">この日のメモ</span>
         <textarea id="day-note" rows="2" placeholder="腰の調子、眠気など">${esc(lg.note || '')}</textarea>
       </label>
@@ -1494,6 +1526,20 @@
         it.sets.push({ w: '', r: '', done: false, _ph: last.w });
         lg.touched = true; save(); render(); break;
       }
+      case 'logaddopen': {
+        const p0 = currentPlan(); const menu = p0.menus[sessionFor(p0, parseKey(logKey()))];
+        logAdd = { muscle: (menu && menu.muscles && menu.muscles[0]) || 'chest', msg: '' }; render(); break;
+      }
+      case 'logaddclose': logAdd = null; render(); break;
+      case 'logadd': {
+        const lg = state.logs[logKey()];
+        const typed = document.getElementById('la-name').value.trim();
+        const name = typed || document.getElementById('la-x').value;
+        if (!name) { logAdd.msg = '種目を選ぶか、名前を入力してください。'; render(); break; }
+        if (lg.items.some((x) => x.name === name)) { logAdd.msg = `「${name}」はすでにあります。`; render(); break; }
+        lg.items.push({ name, muscle: logAdd.muscle, extra: true, sets: Array.from({ length: 3 }, () => ({ w: '', r: '', done: false })) });
+        lg.touched = true; logAdd = null; save(); render(); break;
+      }
       case 'delset': {
         const lg = state.logs[logKey()];
         const it = lg.items[+b.dataset.ex];
@@ -1583,8 +1629,7 @@
         });
         lg.touched = true; save(); render(); break;
       }
-      case 'exunfold': unfolded.add(b.dataset.k); render(); break;
-      case 'exfold': unfolded.delete(b.dataset.k); render(); break;
+      case 'exfold': foldSet.set(b.dataset.k, b.dataset.fold === 'true'); render(); break;
       case 'swap': {
         const k = logKey();
         const i = +b.dataset.i;
@@ -1689,6 +1734,8 @@
       if (opt) it.kind = opt.kind;
       save(); render(); return;
     }
+    if (e.target.id === 'la-m' && logAdd) { logAdd.muscle = e.target.value; logAdd.msg = ''; render(); return; }
+    if (e.target.id === 'la-x' && e.target.value === '') { const inp = document.getElementById('la-name'); if (inp) inp.focus(); return; }
     if (view === 'builder') {
       if (e.target.id === 'b-goal') bdraft.goal = e.target.value;
       if (e.target.id === 'b-level') bdraft.level = e.target.value;
@@ -1712,7 +1759,7 @@
   });
 
   function syncMuscles(menu) {
-    const ms = L.MUSCLE_ORDER.filter((m) => menu.items.some((it) => it.muscle === m));
+    const ms = L.PICK_ORDER.filter((m) => menu.items.some((it) => it.muscle === m));
     if (ms.length) { menu.muscles = ms; menu.color = colorFor(ms); }
   }
 

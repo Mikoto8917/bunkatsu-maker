@@ -14,8 +14,11 @@
     hamstrings: { name: '脚（もも裏）', size: 'large' },
     glutes:     { name: 'お尻',     size: 'small' },
     calves:     { name: 'ふくらはぎ', size: 'small' },
+    abs:        { name: '腹筋',     size: 'small' },
   };
   const MUSCLE_ORDER = ['quads', 'hamstrings', 'chest', 'back', 'glutes', 'shoulders', 'triceps', 'biceps', 'calves'];
+  // 自分で選べる部位（腹筋は自動提案の週セット目標・分割の点数には入れない）
+  const PICK_ORDER = MUSCLE_ORDER.concat(['abs']);
 
   const UPPER = ['chest', 'back', 'shoulders', 'biceps', 'triceps'];
   const LOWER = ['quads', 'hamstrings', 'glutes', 'calves'];
@@ -128,7 +131,7 @@
     const prio = new Set();
     (priority || []).forEach((p) => (PRIORITY_MAP[p] || []).forEach((m) => prio.add(m)));
     const t = {};
-    for (const m of Object.keys(MUSCLES)) {
+    for (const m of MUSCLE_ORDER) {
       const [lo, hi] = v[MUSCLES[m].size];
       let n = recovery === 'good' ? Math.round((lo + hi) / 2) : lo;
       if (prio.has(m)) n += v.prio;
@@ -173,7 +176,7 @@
     const sets = distribute(sessions, ctx.targets);
 
     // ① 頻度（部位ごとの週あたり回数の平均）
-    const freqs = Object.keys(MUSCLES).map((m) => sessions.filter((s) => s.muscles.includes(m)).length);
+    const freqs = MUSCLE_ORDER.map((m) => sessions.filter((s) => s.muscles.includes(m)).length);
     const avgFreq = freqs.reduce((x, y) => x + y, 0) / freqs.length;
     const freq = avgFreq >= 2 ? 1 : avgFreq >= 1.5 ? 0.6 : 0.3;
 
@@ -281,6 +284,7 @@
     hamstrings: [['ルーマニアンデッドリフト', 'compound'], ['レッグカール', 'iso'], ['デッドリフト', 'main']],
     glutes: [['ヒップスラスト', 'compound'], ['ケーブルキックバック', 'iso']],
     calves: [['スタンディングカーフレイズ', 'iso'], ['シーテッドカーフレイズ', 'iso']],
+    abs: [['クランチ', 'iso'], ['レッグレイズ', 'iso'], ['アブローラー', 'iso'], ['プランク', 'iso'], ['ケーブルクランチ', 'iso']],
   };
 
   // 差し替え用の候補（自動で組むメニューには使わない。器具がない・苦手なときに選ぶ）
@@ -328,7 +332,7 @@
     return plan.sessions.map((s, i) => {
       const sets = plan.sets[i];
       const items = [];
-      for (const m of MUSCLE_ORDER) {
+      for (const m of PICK_ORDER) {
         const n = sets[m];
         if (!n) continue;
         const v = seen[m] = (seen[m] === undefined ? 0 : seen[m] + 1);
@@ -369,7 +373,7 @@
   }
 
   const api = {
-    MUSCLES, MUSCLE_ORDER, TEMPLATES, WEEKDAYS, DEFAULT_WEEKDAYS, LEVEL_NAME, GOAL_NAME, LIFT_STD, PRIORITY_MAP,
+    MUSCLES, MUSCLE_ORDER, PICK_ORDER, TEMPLATES, WEEKDAYS, DEFAULT_WEEKDAYS, LEVEL_NAME, GOAL_NAME, LIFT_STD, PRIORITY_MAP,
     epley1RM, liftLevel, judgeExperience, weeklyTargets, scoreTemplate, recommend, buildMenus, fitToTime, exerciseOptions, applyExerciseSwaps, resolveSessions, distribute,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
