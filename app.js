@@ -93,6 +93,7 @@
       if (!isObj(raw) || !isObj(raw.answers) || !isObj(raw.logs)) throw new Error('bad');
       const s = sanitize(raw);
       if (!s.answers || !usable(s)) throw new Error('unusable');
+      if (!isObj(s.theme)) s.theme = state.theme;
       state = s; save();
       importMsg = { ok: true, text: `復元しました（記録 ${Object.keys(state.logs).filter((k) => !emptyLog(state.logs[k])).length}日分）。` };
     } catch (err) { importMsg = { ok: false, text: '読み込めませんでした。分割メーカーで保存したバックアップかどうか確かめてください。' }; }
@@ -232,6 +233,7 @@
     $tabs.hidden = !tabbed;
     $tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-current', b.dataset.v === view ? 'page' : 'false'));
     const fn = { welcome: vWelcome, quiz: vQuiz, result: vResult, dash: vDash, log: vLog, program: vProgram, more: vMore, checkin: vCheckin, builder: vBuilder }[view];
+    if (window.BunkatsuTheme) window.BunkatsuTheme.apply(state.theme || {});
     try {
       $app.innerHTML = fn();
     } catch (err) {
@@ -1347,6 +1349,22 @@
   let confirmReset = false;
   let exportOpen = false;
   let importMsg = '';
+  // テーマ：アクセント色10色と、外観（自動・ライト・ダーク）
+  function themeCard() {
+    const T = window.BunkatsuTheme;
+    if (!T) return '';
+    const t = { accent: 'blue', mode: 'auto', ...(state.theme || {}) };
+    const dark = T.isDark();
+    return `
+      <div class="card themecard">
+        <p class="eyebrow">テーマ</p>
+        <ul class="swatches">${T.COLORS.map((c) => `<li><button class="swatch" style="--sw:${dark ? c.dark : c.light}" data-act="theme" data-accent="${c.id}" aria-pressed="${t.accent === c.id}" aria-label="${c.name}" title="${c.name}"></button></li>`).join('')}</ul>
+        <p class="eyebrow">外観</p>
+        <div class="seg" role="radiogroup" aria-label="外観">${[['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']].map(([k, nm]) => `<button role="radio" data-act="theme" data-mode="${k}" aria-checked="${t.mode === k}" aria-selected="${t.mode === k}">${nm}</button>`).join('')}</div>
+        <p class="muted small">ホーム画面のアイコンは、追加したときの色になります。</p>
+      </div>`;
+  }
+
   function vMore() {
     const a = state.answers;
     const pc = state.custom ? currentPlan() : null;
@@ -1380,6 +1398,7 @@
         </div>
         <p class="muted small">答え直しても、これまでの記録は残ります。</p>`}
       </div>
+      ${themeCard()}
       <div class="card">
         <p class="eyebrow">休憩タイマー</p>
         <p class="muted small">セットに完了の印をつけると、休憩時間を数えます。種目ごとの時間は、記録画面の「休憩」をタップして変えられます。</p>
@@ -1435,7 +1454,7 @@
   // サンプル：回答と、過去3週間ぶんの記録（少しずつ重量が伸びる）
   const BASE_W = { 'ベンチプレス': 60, 'スクワット': 80, 'デッドリフト': 100, 'オーバーヘッドプレス': 37.5, 'ベントオーバーロウ': 55, 'ラットプルダウン': 50, 'シーテッドケーブルロウ': 50, 'レッグプレス': 120, 'ルーマニアンデッドリフト': 70, 'ヒップスラスト': 80, 'インクラインダンベルプレス': 22, 'スタンディングカーフレイズ': 60 };
   function loadSample() {
-    state = blank();
+    state = { ...blank(), theme: state.theme };
     state.answers = JSON.parse(JSON.stringify(SAMPLE));
     state.sample = true;
     const p = currentPlan();
@@ -1470,7 +1489,7 @@
     const act = b.dataset.act;
     const p = () => currentPlan();
     switch (act) {
-      case 'start': if (state.sample) { state = blank(); save(); }
+      case 'start': if (state.sample) { state = { ...blank(), theme: state.theme }; save(); }
         draft = state.answers ? JSON.parse(JSON.stringify(state.answers)) : newDraft(); normalizeDraft(); quizStep = 0; go('quiz'); break;
       case 'sample': loadSample(); go('dash'); break;
       case 'pick': {
@@ -1547,7 +1566,7 @@
         lg.touched = true; save(); render(); break;
       }
       case 'customcancel': customOpen = null; render(); break;
-      case 'custom-new': if (state.sample) { state = blank(); save(); } bdraft = newBuilderDraft(false); bmsg = ''; go('builder'); break;
+      case 'custom-new': if (state.sample) { state = { ...blank(), theme: state.theme }; save(); } bdraft = newBuilderDraft(false); bmsg = ''; go('builder'); break;
       case 'custom-from': case 'custom-edit': bdraft = newBuilderDraft(true); bmsg = ''; go('builder'); break;
       case 'bback': go(state.answers ? 'program' : 'welcome'); break;
       case 'bday': { const d = bdraft.days[+b.dataset.wd]; d.on = !d.on; if (d.on && !d.muscles.length) { d.muscles = G_UPPER.slice(); d.label = d.label || '上半身'; } render(); break; }
@@ -1674,6 +1693,12 @@
       case 'loadfile': document.getElementById('import-file').click(); break;
       case 'reset': confirmReset = true; render(); break;
       case 'reset-no': confirmReset = false; render(); break;
+      case 'theme': {
+        const t = { accent: 'blue', mode: 'auto', ...(state.theme || {}) };
+        if (b.dataset.accent) t.accent = b.dataset.accent;
+        if (b.dataset.mode) t.mode = b.dataset.mode;
+        state.theme = t; save(); render(); break;
+      }
       case 'reset-yes': state = blank(); save(); confirmReset = false; go('welcome'); break;
     }
   });

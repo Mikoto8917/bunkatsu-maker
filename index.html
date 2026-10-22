@@ -15,6 +15,51 @@
 </head>
 <body>
 <title>分割メーカー</title>
+<script>
+/* テーマ（アクセント色と外観）。起動直後に保存済みの色を当てて、一瞬青く見えるのを防ぐ。app.js からも使う */
+window.BunkatsuTheme = (function () {
+  var COLORS = [
+    ['blue', 'ブルー', '#1f6feb', '#5b9bff'], ['indigo', 'インディゴ', '#4f46e5', '#8b8cff'], ['purple', 'パープル', '#7c3aed', '#b38bff'],
+    ['pink', 'ピンク', '#db2777', '#ff7ab6'], ['red', 'レッド', '#dc2626', '#ff6b6b'], ['orange', 'オレンジ', '#c2410c', '#ff9a52'],
+    ['gold', 'ゴールド', '#a16207', '#f5c04a'], ['green', 'グリーン', '#15803d', '#4fcf8e'], ['teal', 'ティール', '#0f766e', '#3fd4c4'],
+    ['graphite', 'グラファイト', '#37352f', '#e6e6e6'],
+  ].map(function (c) { return { id: c[0], name: c[1], light: c[2], dark: c[3] }; });
+  var BG = { light: '#f1f2f4', dark: '#0c0d10' };
+  var mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : { matches: false };
+  var cur = { accent: 'blue', mode: 'auto' };
+  // a を b に p の割合で混ぜる（#rrggbb）。color-mix が使えない古い iPhone でも同じ色になるように自前で計算する
+  function mix(a, b, p) {
+    var x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16), o = '#';
+    [16, 8, 0].forEach(function (s) { var v = Math.round(((x >> s) & 255) * p + ((y >> s) & 255) * (1 - p)); o += ('0' + v.toString(16)).slice(-2); });
+    return o;
+  }
+  function find(id) { for (var i = 0; i < COLORS.length; i++) if (COLORS[i].id === id) return COLORS[i]; return COLORS[0]; }
+  function isDark() { return cur.mode === 'dark' || (cur.mode !== 'light' && mq.matches); }
+  function apply(t) {
+    if (t) cur = { accent: find(t.accent).id, mode: ['light', 'dark'].indexOf(t.mode) >= 0 ? t.mode : 'auto' };
+    var r = document.documentElement, dark = isDark(), c = find(cur.accent);
+    if (cur.mode === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', cur.mode);
+    // ブルーは今までどおり CSS の値を使う。ほかの色は --accent と --accent-soft だけ上書きする（部位の色・--ok・--warn は変えない）
+    if (c.id === 'blue') { r.style.removeProperty('--accent'); r.style.removeProperty('--accent-soft'); }
+    else {
+      var a = dark ? c.dark : c.light;
+      r.style.setProperty('--accent', a);
+      r.style.setProperty('--accent-soft', dark ? mix(a, '#17191d', 0.22) : mix(a, '#ffffff', 0.14));
+    }
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+      if (!m.dataset.orig) m.dataset.orig = m.content;
+      m.content = cur.mode === 'auto' ? m.dataset.orig : BG[cur.mode];
+    });
+    // ホーム画面に追加するときのアイコン（スマホ版だけ。1つの HTML 版にはリンクがない）
+    var icon = document.querySelector('link[rel="icon"]'), touch = document.querySelector('link[rel="apple-touch-icon"]');
+    if (icon) icon.href = c.id === 'blue' ? 'icon-192.png' : 'icons/icon-' + c.id + '-192.png';
+    if (touch) touch.href = c.id === 'blue' ? 'apple-touch-icon.png' : 'icons/icon-' + c.id + '-180.png';
+  }
+  try { var saved = JSON.parse(localStorage.getItem('bunkatsu.v1') || 'null'); if (saved && saved.theme) apply(saved.theme); } catch (e) { /* 読めなければ初期の色 */ }
+  if (mq.addEventListener) mq.addEventListener('change', function () { apply(); });
+  return { COLORS: COLORS, apply: apply, isDark: isDark, current: function () { return cur; } };
+})();
+</script>
 <style>
 /* MacroFactor風：明るい地にカードを積むダッシュボード。数字を大きく、目標と実績を円とバーで並べる。超過しても赤くしない */
 :root {
@@ -200,6 +245,11 @@ th small { display: block; color: var(--muted); font-weight: 500; }
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 3px; }
 .seg button { font: inherit; font-size: 13px; font-weight: 700; border: 0; background: none; color: var(--muted); border-radius: 9px; min-height: 36px; cursor: pointer; }
 .seg button[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.swatches { display: grid; grid-template-columns: repeat(5, 40px); justify-content: space-between; row-gap: 14px; margin: 4px 0 16px; padding: 0; list-style: none; }
+.swatch { width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; background: var(--sw); cursor: pointer; position: relative; }
+.swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--sw); }
+.swatch[aria-pressed="true"]::after { content: ''; position: absolute; left: 14px; top: 11px; width: 8px; height: 14px; border: solid var(--accent-ink); border-width: 0 3px 3px 0; transform: rotate(45deg); }
+.themecard .seg { margin-bottom: 10px; }
 .trendhead { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .delta { font-size: 14px; font-weight: 600; color: var(--ok); margin-left: 6px; }
 .trend { width: 100%; height: auto; display: block; }
