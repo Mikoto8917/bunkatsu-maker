@@ -254,7 +254,7 @@
     $app.dataset.view = view;
   }
 
-  $tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.v === 'log') logDate = null; go(b.dataset.v); });
+  $tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.v === 'log') logDate = null; exMenu = null; go(b.dataset.v); });
 
   // ---------- はじめに ----------
   function vWelcome() {
@@ -684,7 +684,7 @@
     // 入力済みの日でも、プログラムで増えた種目は空のセットで末尾に足す。プログラムから消えて何も入力していない種目は外す
     const blank = (it) => it.sets.every((x) => !x.done && x.w === '' && x.r === '');
     lg.items = lg.items.filter((it) => it.extra || !blank(it) || menu.items.some((x) => x.name === it.name));
-    menu.items.forEach((it) => { if (!lg.items.some((x) => x.name === it.name)) lg.items.push(fresh(it)); });
+    menu.items.forEach((it) => { if (!lg.items.some((x) => x.name === it.name) && !(lg.removed || []).includes(it.name)) lg.items.push(fresh(it)); });
     return lg;
   }
 
@@ -1039,6 +1039,21 @@
       </div>`;
   }
 
+  // 記録の種目を長押ししたときのメニュー（削除）
+  let exMenu = null;
+  function exMenuView(li) {
+    const n = li.sets.filter((x) => x.done || x.w !== '' || x.r !== '').length;
+    return `
+      <div class="exmenu" data-act="exmenuclose">
+        <div class="sheet" role="dialog" aria-label="${esc(li.name)}のメニュー">
+          <p class="exmenu-title">${esc(li.name)}</p>
+          ${n ? `<p class="muted small">入力した${n}セット分の記録も消えます。</p>` : ''}
+          <button class="btn danger" data-act="exdel">この種目を削除</button>
+          <button class="btn ghost" data-act="exmenuclose">やめる</button>
+        </div>
+      </div>`;
+  }
+
   function vLog() {
     const p = currentPlan();
     const d = logDate ? parseKey(logDate) : today();
@@ -1134,8 +1149,9 @@
         ${picker}
       </div>
       <ol class="exlist" data-sort="log">${items}</ol>
-      ${lg.items.length > 1 ? '<p class="muted small sorthint">種目名を押すと開閉、長押しで順番を入れ替えられます。</p>' : ''}
+      ${lg.items.length ? `<p class="muted small sorthint">種目名を押すと開閉、${lg.items.length > 1 ? '長押ししたまま動かすと並び替え、' : ''}長押しして離すと削除できます。</p>` : ''}
       ${logAddView(lg, menu)}
+      ${exMenu !== null && lg.items[exMenu] ? exMenuView(lg.items[exMenu]) : ''}
       <label class="notefield"><span class="eyebrow">この日のメモ</span>
         <textarea id="day-note" rows="2" placeholder="腰の調子、眠気など">${esc(lg.note || '')}</textarea>
       </label>
@@ -1551,6 +1567,19 @@
         const p0 = currentPlan(); const menu = p0.menus[sessionFor(p0, parseKey(logKey()))];
         logAdd = { muscle: (menu && menu.muscles && menu.muscles[0]) || 'chest', msg: '' }; render(); break;
       }
+      case 'exmenuclose': if (e.target.closest('.sheet') && b.classList.contains('exmenu')) break; exMenu = null; render(); break;
+      case 'exdel': {
+        const lg = state.logs[logKey()];
+        const it = lg.items[exMenu];
+        if (it) {
+          lg.items.splice(exMenu, 1);
+          // プログラムにある種目は、消したことを覚えておき、記録に足し直さない
+          lg.removed = (lg.removed || []).filter((nm) => nm !== it.name).concat(it.name);
+          lg.touched = true;
+          [...foldSet.keys()].filter((key) => key.startsWith(logKey() + '|')).forEach((key) => foldSet.delete(key));
+        }
+        exMenu = null; save(); render(); break;
+      }
       case 'logaddclose': logAdd = null; render(); break;
       case 'logadd': {
         const lg = state.logs[logKey()];
@@ -1558,6 +1587,7 @@
         const name = typed || document.getElementById('la-x').value;
         if (!name) { logAdd.msg = '種目を選ぶか、名前を入力してください。'; render(); break; }
         if (lg.items.some((x) => x.name === name)) { logAdd.msg = `「${name}」はすでにあります。`; render(); break; }
+        if (lg.removed) lg.removed = lg.removed.filter((nm) => nm !== name);
         lg.items.push({ name, muscle: logAdd.muscle, extra: true, sets: Array.from({ length: 3 }, () => ({ w: '', r: '', done: false })) });
         lg.touched = true; logAdd = null; save(); render(); break;
       }
@@ -1621,7 +1651,7 @@
       case 'restclear': state.restByEx = {}; save(); render(); break;
       case 'resttoggle': state.restOn = state.restOn === false; save(); render(); break;
       case 'openlog': logDate = b.dataset.k; go('log'); break;
-      case 'logday': logDate = b.dataset.k; pickOpen = false; render(); break;
+      case 'logday': logDate = b.dataset.k; pickOpen = false; exMenu = null; render(); break;
       case 'lifttab': liftTab = b.dataset.k; render(); break;
       case 'checkin': go('checkin'); break;
       case 'back-dash': go('dash'); break;
@@ -1830,7 +1860,7 @@
     if (!grip || (!selGrip && e.target.closest('input, select, textarea, button, form'))) return;
     const item = grip.closest('[data-sort-i]');
     const list = item && item.parentElement.closest('[data-sort]');
-    if (!list || item.parentElement !== list || list.children.length < 2) return;
+    if (!list || item.parentElement !== list || (list.children.length < 2 && list.dataset.sort !== 'log')) return;
     const x0 = e.clientX, y0 = e.clientY;
     cancelHold();
     holdTimer = setTimeout(() => {
@@ -1854,7 +1884,7 @@
       const line = document.createElement('div');
       line.className = 'sortline';
       document.body.appendChild(line);
-      drag.ghost = ghost; drag.line = line; drag.offY = off; drag.ins = null;
+      drag.ghost = ghost; drag.line = line; drag.offY = off; drag.ins = null; drag.moved = false;
     }, HOLD_MS);
     const moveBeforeHold = (ev) => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) cancelHold(); };
     const stop = () => { cancelHold(); window.removeEventListener('pointermove', moveBeforeHold); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); };
@@ -1865,6 +1895,7 @@
 
   function dragMove(y) {
     const { item, list, ghost, line } = drag;
+    if (Math.abs(y - drag.y0) > 10) drag.moved = true;
     ghost.style.top = (y - drag.offY) + 'px';
     // 指の位置から入る場所（ほかの項目の何番目の前か）を決める。項目そのものは動かさない
     const sibs = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined);
@@ -1897,11 +1928,13 @@
 
   function endDrag() {
     if (!drag) return;
-    const { item, list, ghost, line, ins } = drag;
+    const { item, list, ghost, line, ins, moved } = drag;
     drag = null;
     ghost.remove(); line.remove();
     item.classList.remove('is-lifted'); list.classList.remove('is-sorting');
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 350);
+    // 記録の種目を長押しして、動かさずに離したときは、削除のメニューを出す
+    if (!moved && list.dataset.sort === 'log') { exMenu = +item.dataset.sortI; render(); return; }
     const others = [...list.children].filter((c) => c !== item && c.dataset.sortI !== undefined).map((c) => +c.dataset.sortI);
     if (ins === null) return;
     const order = others.slice(0, ins).concat(+item.dataset.sortI, others.slice(ins));
