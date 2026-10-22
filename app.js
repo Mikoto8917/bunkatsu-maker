@@ -7,7 +7,7 @@
   const $tabs = document.getElementById('tabs');
 
   // ---------- 保存 ----------
-  function blank() { return { answers: null, choice: null, levelOverride: null, logs: {}, swap: {}, checkins: [], sample: false, restDefault: null, restByEx: {}, exSwap: {}, customEx: {}, custom: null, weights: {}, restOn: true }; }
+  function blank() { return { answers: null, choice: null, levelOverride: null, logs: {}, swap: {}, checkins: [], sample: false, restDefault: null, restByEx: {}, exSwap: {}, customEx: {}, custom: null, weights: {}, restOn: true, lastBackup: null }; }
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   // 保存データ・バックアップの形をそろえる。形が合わない部分は捨てて、アプリが止まらないようにする
   function sanitize(s) {
@@ -22,8 +22,25 @@
     });
     Object.keys(out.swap).forEach((k) => { if (!Number.isInteger(out.swap[k])) delete out.swap[k]; });
     if (out.custom !== null && !(isObj(out.custom) && Array.isArray(out.custom.menus) && Array.isArray(out.custom.weekdays))) out.custom = null;
-    if (out.answers !== null && !isObj(out.answers)) out.answers = null;
+    out.answers = out.answers === null ? null : validAnswers(out.answers);
     return out;
+  }
+  // 回答の必須項目（日数・曜日・目的・時間）がそろっているか確かめ、ほかは既定値で埋める。足りなければ null
+  function validAnswers(a) {
+    if (!isObj(a)) return null;
+    const days = a.days;
+    const wds = a.weekdays;
+    if (!Number.isInteger(days) || days < 1 || days > 7) return null;
+    if (!Array.isArray(wds) || !wds.every((x) => Number.isInteger(x) && x >= 0 && x <= 6) || new Set(wds).size !== wds.length) return null;
+    if (!L.GOAL_NAME[a.goal] || !['le45', 'm60', 'm75', 'ge90'].includes(a.sessionMin)) return null;
+    return Object.assign({}, a, {
+      sex: ['male', 'female', 'none'].includes(a.sex) ? a.sex : 'none',
+      lifts: isObj(a.lifts) ? a.lifts : {},
+      recovery: ['good', 'normal', 'poor'].includes(a.recovery) ? a.recovery : 'normal',
+      schedule: ['fixed', 'sometimes', 'irregular'].includes(a.schedule) ? a.schedule : 'fixed',
+      priority: Array.isArray(a.priority) ? a.priority.filter((x) => typeof x === 'string') : [],
+      bodyweight: +a.bodyweight > 0 ? +a.bodyweight : null,
+    });
   }
   // そのデータで主な画面が描けるか試す（描けなければ使わない）
   function usable(s) {
@@ -44,12 +61,66 @@
   let state = load();
   // 見ただけの日（入力も完了もメモもない記録）は保存しない
   const emptyLog = (lg) => !lg.touched && !lg.note && (lg.items || []).every((it) => it.sets.every((x) => !x.done && x.w === '' && x.r === ''));
+  function serialize() {
+    const logs = {};
+    Object.keys(state.logs).forEach((k) => { if (!emptyLog(state.logs[k])) logs[k] = state.logs[k]; });
+    return JSON.stringify({ ...state, logs });
+  }
   function save() {
+    try { localStorage.setItem(KEY, serialize()); } catch (e) { /* 保存できない環境でも動かす */ }
+  }
+  // ブラウザが容量不足のときに勝手に消さないよう、永続保存を一度だけ申請する（対応していない環境では何もしない）
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then((p) => p || navigator.storage.persist()).catch(() => {});
+  } catch (e) { /* 申請できない環境 */ }
+
+  // ---------- バックアップ ----------
+  const BACKUP_DAYS = 30;
+  // 30日以上バックアップしていなければ一言促す（記録がない人には出さない）
+  function backupNag() {
+    const keys = Object.keys(state.logs || {}).filter((k) => !emptyLog(state.logs[k])).sort();
+    if (!keys.length) return '';
+    const since = state.lastBackup || keys[0];
+    const days = Math.floor((today() - parseKey(since)) / 864e5);
+    if (days < BACKUP_DAYS) return '';
+    return state.lastBackup ? `最後のバックアップから${days}日たっています。ファイルに保存しておきましょう。` : 'まだバックアップがありません。ファイルに保存しておきましょう。';
+  }
+  function markBackup() { state.lastBackup = dateKey(today()); save(); }
+  // 貼り付けでもファイルでも、同じ検査を通してから取り込む
+  function importText(txt) {
     try {
-      const logs = {};
-      Object.keys(state.logs).forEach((k) => { if (!emptyLog(state.logs[k])) logs[k] = state.logs[k]; });
-      localStorage.setItem(KEY, JSON.stringify({ ...state, logs }));
-    } catch (e) { /* 保存できない環境でも動かす */ }
+      const raw = JSON.parse(String(txt).trim());
+      if (!isObj(raw) || !isObj(raw.answers) || !isObj(raw.logs)) throw new Error('bad');
+      const s = sanitize(raw);
+      if (!s.answers || !usable(s)) throw new Error('unusable');
+      state = s; save();
+      importMsg = { ok: true, text: `復元しました（記録 ${Object.keys(state.logs).filter((k) => !emptyLog(state.logs[k])).length}日分）。` };
+    } catch (err) { importMsg = { ok: false, text: '読み込めませんでした。分割メーカーで保存したバックアップかどうか確かめてください。' }; }
+    render();
+  }
+  async function saveBackupFile() {
+    const name = `bunkatsu-backup-${dateKey(today())}.json`;
+    const text = serialize();
+    try {
+      // iPhone などは共有シートから「ファイルに保存」できる
+      if (typeof File === 'function' && navigator.canShare) {
+        const file = new File([text], name, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: name });
+          markBackup(); importMsg = { ok: true, text: 'バックアップを保存しました。' }; render(); return;
+        }
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // 共有をやめた
+    }
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      markBackup(); importMsg = { ok: true, text: `${name} を保存しました。` };
+    } catch (err) { importMsg = { ok: false, text: 'ファイルに保存できませんでした。「文字列でバックアップ」を使ってください。' }; }
+    render();
   }
 
   // ---------- 小物 ----------
@@ -594,7 +665,7 @@
     if (state.answers.schedule === 'irregular' && !state.custom) {
       const last = lastSessionIdx();
       const j = last ? (last.idx + 1) % p.menus.length : 0;
-      return { label: p.menus[j].label, when: '次回', color: p.menus[j].color };
+      return { label: p.menus[j].label, when: '', color: p.menus[j].color };
     }
     for (let i = 1; i <= 7; i++) {
       const dd = addDays(d, i);
@@ -823,7 +894,7 @@
       <div class="card todaycard rest">
         <div class="cardhead"><p class="eyebrow">今日</p><span class="muted small">${fmtDate(d)}</span></div>
         <h2 class="big">休養日</h2>
-        ${nx ? `<p class="muted">次は <b class="c-${nx.color} cc">${esc(nx.when)}・${esc(nx.label)}</b></p>` : ''}
+        ${nx ? `<p class="muted">次は <b class="c-${nx.color} cc">${nx.when ? `${esc(nx.when)}・` : ''}${esc(nx.label)}</b></p>` : ''}
         <ul class="tips small">${REST_TIPS.slice(0, 3).map((t) => `<li>${t}</li>`).join('')}</ul>
       </div>`;
     } else {
@@ -917,6 +988,7 @@
 
   // ---------- 記録（日付ごと） ----------
   let logDate = null;
+  let rawOpen = false; // 「文字列でバックアップ」を開いているか
   const unfolded = new Set(); // たたんだ種目のうち、開いているもの（日付|番号）
   function vLog() {
     const p = currentPlan();
@@ -950,7 +1022,7 @@
         ${nav}
         <div class="titlerow"><h1 class="display">休養日</h1>${changeBtn}</div>
         ${picker}
-        ${nx ? `<p class="next">次は <b>${esc(nx.when)}：${esc(nx.label)}</b></p>` : ''}
+        ${nx ? `<p class="next">次は <b>${nx.when ? `${esc(nx.when)}：` : ''}${esc(nx.label)}</b></p>` : ''}
         <ul class="tips">${REST_TIPS.map((t) => `<li>${t}</li>`).join('')}</ul>
       </section>`;
     }
@@ -1237,7 +1309,7 @@
     ] : [
       ['週の日数', `${a.days}日（${a.weekdays.map((i) => L.WEEKDAYS[i]).join('・')}）`],
       ['1回の時間', { le45: '45分以下', m60: '60分', m75: '75分', ge90: '90分以上' }[a.sessionMin]],
-      ['体重', `${a.bodyweight}kg`],
+      ['体重', a.bodyweight ? `${a.bodyweight}kg` : '未入力'],
       ['目的', L.GOAL_NAME[a.goal]],
       ['回復', { good: '良い', normal: '普通', poor: '悪い' }[a.recovery]],
       ['予定', { fixed: '固定できる', sometimes: 'ときどきずれる', irregular: '毎週バラバラ' }[a.schedule]],
@@ -1278,16 +1350,25 @@
       </div>
       <div class="card">
         <p class="eyebrow">バックアップ</p>
-        <p class="muted small">記録はこの端末のブラウザにだけ保存されています。ブラウザのデータを消すと記録も消えるので、ときどき下の文字列をメモなどに保存してください。</p>
+        <p class="muted small">記録はこの端末のブラウザにだけ保存されています。ブラウザのデータを消すと記録も消えるので、ときどきファイルに保存してください。</p>
+        ${backupNag() ? `<p class="small warn">${esc(backupNag())}</p>` : (state.lastBackup ? `<p class="muted small">最後のバックアップ：${esc(fmtDate(parseKey(state.lastBackup)))}</p>` : '')}
         <div class="stack">
-          <button class="btn ghost" data-act="export">${exportOpen ? 'バックアップを閉じる' : 'バックアップを表示'}</button>
+          <button class="btn primary" data-act="savefile">ファイルに保存</button>
+          <button class="btn ghost" data-act="loadfile">ファイルから復元</button>
+          <input id="import-file" type="file" accept=".json,application/json,text/plain" hidden>
         </div>
-        ${exportOpen ? `<textarea id="export-box" rows="5" readonly>${esc(JSON.stringify(state))}</textarea>
-          <button class="btn tiny" data-act="copy">コピー</button>` : ''}
-        <label class="notefield"><span class="eyebrow">復元</span>
-          <textarea id="import-box" rows="3" placeholder="保存しておいた文字列を貼り付け"></textarea>
-        </label>
-        <button class="btn tiny" data-act="import">この内容で復元する</button>
+        <details class="rawbackup" ${exportOpen || rawOpen ? 'open' : ''}>
+          <summary class="small">文字列でバックアップ・復元する</summary>
+          <div class="stack">
+            <button class="btn ghost" data-act="export">${exportOpen ? 'バックアップを閉じる' : 'バックアップを表示'}</button>
+            ${exportOpen ? `<textarea id="export-box" rows="5" readonly>${esc(serialize())}</textarea>
+              <button class="btn tiny" data-act="copy">コピー</button>` : ''}
+            <label class="notefield"><span class="eyebrow">復元</span>
+              <textarea id="import-box" rows="3" placeholder="保存しておいた文字列を貼り付け"></textarea>
+            </label>
+            <button class="btn tiny" data-act="import">この内容で復元する</button>
+          </div>
+        </details>
         ${importMsg ? `<p class="small ${importMsg.ok ? 'ok' : 'warn'}">${esc(importMsg.text)}</p>` : ''}
       </div>
       <div class="card danger">
@@ -1505,21 +1586,12 @@
       case 'copy': {
         const box = document.getElementById('export-box');
         const fallback = () => { box.focus(); box.select(); b.textContent = '選択しました。長押しでコピーしてください'; };
-        try { navigator.clipboard.writeText(box.value).then(() => { b.textContent = 'コピーしました'; }, fallback); } catch (err) { fallback(); }
+        try { navigator.clipboard.writeText(box.value).then(() => { b.textContent = 'コピーしました'; state.lastBackup = dateKey(today()); save(); }, fallback); } catch (err) { fallback(); }
         break;
       }
-      case 'import': {
-        const txt = document.getElementById('import-box').value.trim();
-        try {
-          const raw = JSON.parse(txt);
-          if (!isObj(raw) || !isObj(raw.answers) || !isObj(raw.logs)) throw new Error('bad');
-          const s = sanitize(raw);
-          if (!usable(s)) throw new Error('unusable');
-          state = s; save();
-          importMsg = { ok: true, text: `復元しました（記録 ${Object.keys(state.logs).filter((k) => !emptyLog(state.logs[k])).length}日分）。` };
-        } catch (err) { importMsg = { ok: false, text: '読み込めませんでした。バックアップの文字列を最初から最後まで貼り付けてください。' }; }
-        render(); break;
-      }
+      case 'import': importText(document.getElementById('import-box').value); break;
+      case 'savefile': saveBackupFile(); break;
+      case 'loadfile': document.getElementById('import-file').click(); break;
       case 'reset': confirmReset = true; render(); break;
       case 'reset-no': confirmReset = false; render(); break;
       case 'reset-yes': state = blank(); save(); confirmReset = false; go('welcome'); break;
@@ -1568,6 +1640,11 @@
   });
 
   $app.addEventListener('change', (e) => {
+    if (e.target.id === 'import-file') {
+      const f = e.target.files && e.target.files[0];
+      if (f) f.text().then(importText, () => { importMsg = { ok: false, text: 'ファイルを読み込めませんでした。' }; render(); });
+      return;
+    }
     if (e.target.dataset.cname) {
       const [i, n] = e.target.dataset.cname.split('-').map(Number);
       if (e.target.value === '__custom__') { customOpen = `${i}-${n}`; render(); const inp = document.getElementById(`cx-${i}-${n}`); if (inp) inp.focus(); return; }
@@ -1765,6 +1842,7 @@
   // 開いているメニューを覚えておく（描画し直しても閉じないように）
   $app.addEventListener('toggle', (e) => {
     const d = e.target;
+    if (d.classList && d.classList.contains('rawbackup')) { rawOpen = d.open; return; }
     if (!d.dataset || d.dataset.menu === undefined) return;
     if (d.open) openMenus.add(+d.dataset.menu); else openMenus.delete(+d.dataset.menu);
   }, true);
