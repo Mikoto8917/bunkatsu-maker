@@ -1,5 +1,5 @@
-// オフラインでも開けるように、アプリ本体をキャッシュする。中身が変わると a5992cd4 が変わり、古いキャッシュを捨てる
-const CACHE = 'bunkatsu-a5992cd4';
+// オフラインでも開けるように、アプリ本体をキャッシュする。中身が変わると 345264f0 が変わり、古いキャッシュを捨てる
+const CACHE = 'bunkatsu-345264f0';
 const FILES = ['./', 'index.html', 'logic.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
@@ -10,6 +10,6 @@ self.addEventListener('fetch', (e) => {
   const same = new URL(e.request.url).origin === location.origin;
   // 自分のファイルはネット優先（更新をすぐ反映）、つながらなければキャッシュ。フォントなど外部はキャッシュ優先
   e.respondWith(same
-    ? fetch(e.request).then((r) => { const c = r.clone(); caches.open(CACHE).then((x) => x.put(e.request, c)); return r; }).catch(() => caches.match(e.request, { ignoreSearch: true }))
+    ? fetch(e.request, { cache: 'no-cache' }).then((r) => { const c = r.clone(); caches.open(CACHE).then((x) => x.put(e.request, c)); return r; }).catch(() => caches.match(e.request, { ignoreSearch: true }))
     : caches.match(e.request).then((m) => m || fetch(e.request).then((r) => { const c = r.clone(); caches.open(CACHE).then((x) => x.put(e.request, c)); return r; })));
 });

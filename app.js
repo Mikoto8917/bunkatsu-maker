@@ -246,7 +246,9 @@
         <h1 class="title">データを読み込めませんでした</h1>
         <p>保存されているデータの形がこわれているため、画面を表示できません。下の文字列はいまのデータです。必要ならコピーして残してから、初期化してください。</p>
         <textarea readonly rows="6" class="small">${esc(dump)}</textarea>
-        <button class="btn primary" data-act="reset-yes">データを初期化してはじめから</button>
+        <button class="btn primary" onclick="location.reload()">もう一度読み込む</button>
+        <p class="muted small">アプリの更新の直後は、読み込み直すと直ることがあります。初期化すると記録がすべて消えます。</p>
+        <button class="linkbtn small" data-act="reset-yes">記録を消して初期化する</button>
       </section>`;
     }
     $app.dataset.view = view;
