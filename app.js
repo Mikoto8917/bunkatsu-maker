@@ -1155,7 +1155,7 @@
               ${names.map((nm) => `<option value="${esc(nm)}" ${nm === it.name ? 'selected' : ''}>${esc(nm)}${nm === orig && it.original ? '（元の種目）' : ''}</option>`).join('')}
               <option value="__custom__">＋ 候補にない種目を入力…</option>
             </select></label>`}
-          ${editing ? '' : `<span class="num">${it.sets}×${it.reps}</span>`}</li>`;
+          </li>`;
         }).join('')}</ul>
       </details>`).join('');
 
