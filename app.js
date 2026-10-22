@@ -201,6 +201,22 @@
     return null;
   }
 
+  // 前回の記録から今日の目標を作る（ダブルプログレッション。plan/copy-previous.md）
+  // 全セットがレップ範囲の上限に届いていたら重量を上げて回数は下限に、届いていなければ回数を1つ上げる
+  function progressTarget(prevSets, reps, muscle, kind) {
+    const t = String(reps || '');
+    const m = t.match(/(\d+)\s*[〜~～\-–ー]\s*(\d+)/) || t.match(/^\s*(\d+)\s*$/);
+    const lo = m ? +m[1] : null;
+    const hi = m ? +(m[2] || m[1]) : null;
+    const inc = ['quads', 'hamstrings', 'glutes'].includes(muscle) && (kind === 'main' || kind === 'compound') ? 5 : 2.5;
+    const up = hi !== null && prevSets.every((x) => +x.r >= hi);
+    const round = (v) => Math.round(v * 100) / 100;
+    const sets = prevSets.map((x) => (up
+      ? { w: x.w === '' ? '' : round(+x.w + inc), r: lo }
+      : { w: x.w, r: hi !== null ? Math.min(+x.r + 1, hi) : +x.r + 1 }));
+    return { up, inc, sets };
+  }
+
   // ---------- 画面の切り替え ----------
   let view = state.answers ? 'dash' : 'welcome';
   let quizStep = 0;
@@ -1054,6 +1070,7 @@
           ${allDone ? `<button class="foldbtn num" data-act="exfold" data-k="${esc(fkey)}" aria-expanded="true">たたむ</button>` : `<span class="sxr num">${li.sets.length}×${esc(it.reps)}</span>`}
         </div>
         <p class="exmeta"><span class="mtag">${L.MUSCLES[it.muscle].name}</span><span class="prev num">${esc(prevTxt)}</span>
+          ${prev && !allDone ? (() => { const g = progressTarget(prev.sets, it.reps, it.muscle, it.kind); return `<button class="copyprev" data-act="copyprev" data-ex="${n}" aria-label="${esc(it.name)}の前回の値から目標を入れる">目標をコピー ${g.up ? `↑${g.inc}kg` : '＋1回'}</button>`; })() : ''}
           ${state.restOn === false ? '' : `<button class="restchip num" data-act="restpick" data-name="${esc(it.name)}" data-kind="${it.kind || 'compound'}" aria-label="${esc(it.name)}の休憩時間を変更">休憩 ${fmtSec(restFor(it.name, it.kind))}</button>`}</p>
         <ol class="sets">
           ${li.sets.map((s, si) => {
@@ -1548,6 +1565,24 @@
         save(); go('dash'); break;
       }
       case 'pickopen': pickOpen = !pickOpen; render(); break;
+      case 'copyprev': {
+        // 前回の値から作った目標を、まだ完了していないセットに入れる（完了の印はつけない）
+        const k = logKey();
+        const lg = state.logs[k];
+        const li = lg.items[+b.dataset.ex];
+        const p = currentPlan();
+        const menu = p.menus[lg.session] || { items: [] };
+        const it = menu.items.find((x) => x.name === li.name) || { reps: '', muscle: li.muscle, kind: 'compound' };
+        const prev = previous(li.name, k);
+        if (!prev) break;
+        const g = progressTarget(prev.sets, it.reps, it.muscle || li.muscle, it.kind);
+        li.sets.forEach((x, si) => {
+          if (x.done) return;
+          const t = g.sets[Math.min(si, g.sets.length - 1)];
+          x.w = t.w; x.r = t.r;
+        });
+        lg.touched = true; save(); render(); break;
+      }
       case 'exunfold': unfolded.add(b.dataset.k); render(); break;
       case 'exfold': unfolded.delete(b.dataset.k); render(); break;
       case 'swap': {
