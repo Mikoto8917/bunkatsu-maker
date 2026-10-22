@@ -137,7 +137,9 @@ section { display: flex; flex-direction: column; gap: 12px; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
 .btn.ghost { background: var(--accent-soft); color: var(--accent); }
 .btn.tiny { min-height: 40px; width: auto; padding: 0 14px; font-size: 14px; border-radius: 99px; }
-.btn.danger { background: var(--warn); color: var(--surface); }
+.btn.danger { background: #dc2626; color: #ffffff; }
+:root[data-theme="dark"] .btn.danger { background: #ff6b6b; color: #0c0d10; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.danger { background: #ff6b6b; color: #0c0d10; } }
 .btn:disabled { opacity: .4; cursor: default; }
 .linkbtn { font: inherit; background: none; border: 0; color: var(--accent); font-weight: 700; cursor: pointer; padding: 6px 0; min-height: 36px; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -493,8 +495,8 @@ textarea { width: 100%; padding: 10px 12px; font-size: 16px; resize: vertical; b
   <button data-v="program"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>プログラム</button>
   <button data-v="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>その他</button>
 </nav>
-<script src="logic.js?v=d8f574ac"></script>
-<script src="app.js?v=d8f574ac"></script>
+<script src="logic.js?v=c40f3f7a"></script>
+<script src="app.js?v=c40f3f7a"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* 登録できなくても普通に動く */ }); });
