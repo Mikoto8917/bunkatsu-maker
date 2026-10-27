@@ -1017,6 +1017,115 @@
   let logDate = null;
   let rawOpen = false; // 「文字列でバックアップ」を開いているか
   const foldSet = new Map(); // 種目ごとの開閉（日付|番号 → たたむなら true）。なければ、全セット終わった種目だけたたむ
+  // ---------- 今日のトレーニングを画像で共有 ----------
+  // アプリ名と URL はここだけで持つ（名前が決まったら差し替える）
+  const APP_NAME = '分割メーカー';
+  const APP_URL = 'mikoto8917.github.io/bunkatsu-maker';
+
+  // 完了したセットだけを「60kg × 10・10・9」の形にする。重量がセットごとに違えば「60×10・62.5×8」、重量なしは回数だけ
+  function shareSetsText(sets) {
+    const ws = sets.map((x) => (x.w === '' || x.w == null ? '' : String(x.w)));
+    const rs = sets.map((x) => (x.r === '' || x.r == null ? '-' : String(x.r)));
+    if (ws.every((w) => w === '')) return `${rs.join('・')}回`;
+    if (ws.every((w) => w === ws[0])) return `${ws[0]}kg × ${rs.join('・')}`;
+    return sets.map((x, i) => (ws[i] === '' ? rs[i] : `${ws[i]}×${rs[i]}`)).join('・');
+  }
+  function shareData(k) {
+    const lg = state.logs[k];
+    const items = lg.items.map((it) => ({ name: it.name, sets: it.sets.filter((x) => x.done) })).filter((it) => it.sets.length);
+    const sets = items.reduce((a, it) => a + it.sets.length, 0);
+    const volume = items.reduce((a, it) => a + it.sets.reduce((b, x) => b + (+x.w || 0) * (+x.r || 0), 0), 0);
+    const d = parseKey(k);
+    const p = currentPlan();
+    const wk = weekDone(mondayOf(d));
+    return { date: fmtDate(d), label: lg.label || (p.menus[lg.session] || {}).label || '', items, sets, volume: Math.round(volume * 10) / 10, week: wk.sessions, planned: p.chosen.tpl.days, thisWeek: dateKey(mondayOf(d)) === dateKey(mondayOf(today())) };
+  }
+  // 1080×1350 の画像を canvas で描く。背景は常に暗め＋白文字で、強調色だけテーマ色（ダーク用の明るい色）
+  function drawShareImage(data, iconImg) {
+    const W = 1080, H = 1350, P = 64;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const T = window.BunkatsuTheme;
+    const c = T ? (T.COLORS.find((x) => x.id === ((state.theme && state.theme.accent) || 'blue')) || T.COLORS[0]) : { dark: '#5b9bff' };
+    const acc = c.dark;
+    const mixHex = (a, b, t) => { const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16); return '#' + [16, 8, 0].map((sh) => ('0' + Math.round(((x >> sh) & 255) * t + ((y >> sh) & 255) * (1 - t)).toString(16)).slice(-2)).join(''); };
+    const bg = g.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, mixHex(acc, '#0c0d10', 0.22)); bg.addColorStop(1, '#0c0d10');
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const font = getComputedStyle(document.body).fontFamily;
+    const F = (size, w) => `${w || 400} ${size}px ${font}`;
+    const fit = (text, max) => { if (g.measureText(text).width <= max) return text; let t = text; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t + '…'; };
+    g.textBaseline = 'alphabetic';
+    let y = P + 40;
+    g.fillStyle = '#c9ced6'; g.font = F(36, 700); g.fillText(data.date, P, y);
+    y += 100; g.fillStyle = acc; g.font = F(84, 700); g.fillText(fit(data.label, W - P * 2), P, y);
+    y += 40; g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(P, y, W - P * 2, 2);
+    // 種目（8つまで）
+    const shown = data.items.slice(0, 8);
+    y += 30;
+    g.font = F(36, 400);
+    shown.forEach((it) => {
+      y += 62;
+      g.font = F(34, 400); g.fillStyle = '#c9ced6';
+      const st = shareSetsText(it.sets);
+      const stw = Math.min(g.measureText(st).width, (W - P * 2) * 0.62);
+      g.textAlign = 'right'; g.fillText(fit(st, (W - P * 2) * 0.62), W - P, y); g.textAlign = 'left';
+      g.font = F(36, 700); g.fillStyle = '#ffffff'; g.fillText(fit(it.name, W - P * 2 - stw - 28), P, y);
+    });
+    if (data.items.length > 8) { y += 58; g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(`ほか ${data.items.length - 8} 種目`, P, y); }
+    // 合計と今週
+    const by = H - P - 300;
+    g.fillStyle = 'rgba(255,255,255,.08)';
+    if (g.roundRect) { g.beginPath(); g.roundRect(P, by, W - P * 2, 180, 36); g.fill(); } else g.fillRect(P, by, W - P * 2, 180);
+    const col = (W - P * 2) / 3;
+    [[`${data.sets}`, 'セット'], [data.volume.toLocaleString('ja-JP'), 'kg 総挙上量'], [`${data.week} / ${data.planned}`, `${data.thisWeek ? '今週' : 'この週'}の回数`]].forEach(([v, u], i) => {
+      const cx = P + col * i + col / 2;
+      g.textAlign = 'center';
+      g.font = F(v.length > 7 ? 46 : 58, 700); g.fillStyle = '#ffffff'; g.fillText(v, cx, by + 92);
+      g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(u, cx, by + 144);
+    });
+    g.textAlign = 'left';
+    // いちばん下：アイコン・名前・URL
+    const iy = H - P - 80, is = 80;
+    if (iconImg) {
+      g.save(); g.beginPath();
+      if (g.roundRect) g.roundRect(P, iy, is, is, 20); else g.rect(P, iy, is, is);
+      g.clip(); g.drawImage(iconImg, P, iy, is, is); g.restore();
+    } else {
+    g.fillStyle = acc;
+    if (g.roundRect) { g.beginPath(); g.roundRect(P, iy, is, is, 20); g.fill(); } else g.fillRect(P, iy, is, is);
+    g.strokeStyle = '#0c0d10'; g.lineWidth = 6; g.lineCap = 'round';
+    for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(P + is / 2, iy + is / 2, 26, i * Math.PI / 2 + 0.25, (i + 1) * Math.PI / 2 - 0.25); g.stroke(); }
+    g.beginPath(); g.moveTo(P + 28, iy + 40); g.lineTo(P + 52, iy + 40); g.stroke();
+    }
+    g.font = F(36, 700); g.fillStyle = '#ffffff'; g.fillText(APP_NAME, P + is + 24, iy + 36);
+    g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(APP_URL, P + is + 24, iy + 76);
+    return cv;
+  }
+  async function shareToday() {
+    const k = logKey();
+    const data = shareData(k);
+    // ホーム画面用のアイコン（スマホ版にだけある）を使う。読めなければ簡単な形で描く
+    const iconImg = await new Promise((res) => {
+      const link = document.querySelector('link[rel="apple-touch-icon"]');
+      if (!link) { res(null); return; }
+      const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = link.href;
+    });
+    const cv = drawShareImage(data, iconImg);
+    const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+    if (!blob) return;
+    const file = new File([blob], `training-${k}.png`, { type: 'image/png' });
+    const text = `${APP_NAME}で記録しました #筋トレ\nhttps://${APP_URL}/`;
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return; }
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+    // 共有シートが使えない端末（主にPC）はダウンロード
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
   // 記録画面の「＋ 種目を追加」。その日の記録だけに足す（プログラムは変えない）
   let logAdd = null; // 開いているときは { muscle, msg }
   function logAddView(lg, menu) {
@@ -1150,6 +1259,7 @@
       </div>
       <ol class="exlist" data-sort="log">${items}</ol>
       ${lg.items.length ? `<p class="muted small sorthint">種目名を押すと開閉、${lg.items.length > 1 ? '長押ししたまま動かすと並び替え、' : ''}長押しして離すと削除できます。</p>` : ''}
+      ${done > 0 && !state.sample ? `<button class="btn ${done === total ? 'primary' : 'outline'} sharebtn" data-act="share">${isToday ? '今日' : 'この日'}のトレーニングを共有</button>` : ''}
       ${logAddView(lg, menu)}
       ${exMenu !== null && lg.items[exMenu] ? exMenuView(lg.items[exMenu]) : ''}
       <label class="notefield"><span class="eyebrow">この日のメモ</span>
@@ -1580,6 +1690,7 @@
         }
         exMenu = null; save(); render(); break;
       }
+      case 'share': shareToday(); break;
       case 'logaddclose': logAdd = null; render(); break;
       case 'logadd': {
         const lg = state.logs[logKey()];
