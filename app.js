@@ -1024,9 +1024,9 @@
 
   // 完了したセットだけを「60kg × 10・10・9」の形にする。重量がセットごとに違えば「60×10・62.5×8」、重量なしは回数だけ
   function shareSetsText(sets) {
-    const ws = sets.map((x) => (x.w === '' || x.w == null ? '' : String(x.w)));
+    const ws = sets.map((x) => (x.w === '' || x.w == null || +x.w === 0 ? '' : String(x.w)));
     const rs = sets.map((x) => (x.r === '' || x.r == null ? '-' : String(x.r)));
-    if (ws.every((w) => w === '')) return `${rs.join('・')}回`;
+    if (ws.every((w) => w === '')) return `${rs.join('・')} 回`;
     if (ws.every((w) => w === ws[0])) return `${ws[0]}kg × ${rs.join('・')}`;
     return sets.map((x, i) => (ws[i] === '' ? rs[i] : `${ws[i]}×${rs[i]}`)).join('・');
   }
@@ -1038,68 +1038,96 @@
     const d = parseKey(k);
     const p = currentPlan();
     const wk = weekDone(mondayOf(d));
-    return { date: fmtDate(d), label: lg.label || (p.menus[lg.session] || {}).label || '', items, sets, volume: Math.round(volume * 10) / 10, week: wk.sessions, planned: p.chosen.tpl.days, thisWeek: dateKey(mondayOf(d)) === dateKey(mondayOf(today())) };
+    return { date: fmtDate(d), label: lg.label || (p.menus[lg.session] || {}).label || '', items, sets, volume: Math.round(volume * 10) / 10, week: wk.sessions, planned: p.chosen.tpl.days, thisDay: k === dateKey(today()) ? '今日' : 'この日', thisWeek: dateKey(mondayOf(d)) === dateKey(mondayOf(today())) };
   }
-  // 1080×1350 の画像を canvas で描く。背景は常に暗め＋白文字で、強調色だけテーマ色（ダーク用の明るい色）
+  // 1080×1350 の画像を canvas で描く（デザイン部 A案「大きな数字」）。背景はテーマ色のライト版から、それを黒に45%寄せた色への斜めグラデーション。文字は白
   function drawShareImage(data, iconImg) {
-    const W = 1080, H = 1350, P = 64;
+    const W = 1080, H = 1350, P = 72;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     const T = window.BunkatsuTheme;
-    const c = T ? (T.COLORS.find((x) => x.id === ((state.theme && state.theme.accent) || 'blue')) || T.COLORS[0]) : { dark: '#5b9bff' };
-    const acc = c.dark;
-    const mixHex = (a, b, t) => { const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16); return '#' + [16, 8, 0].map((sh) => ('0' + Math.round(((x >> sh) & 255) * t + ((y >> sh) & 255) * (1 - t)).toString(16)).slice(-2)).join(''); };
-    const bg = g.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0, mixHex(acc, '#0c0d10', 0.22)); bg.addColorStop(1, '#0c0d10');
+    const c = T ? (T.COLORS.find((x) => x.id === ((state.theme && state.theme.accent) || 'blue')) || T.COLORS[0]) : { id: 'blue', light: '#1f6feb' };
+    const from = c.light;
+    const n = parseInt(from.slice(1), 16);
+    const to = '#' + [16, 8, 0].map((sh) => ('0' + Math.round(((n >> sh) & 255) * 0.55).toString(16)).slice(-2)).join('');
+    // CSS の linear-gradient(160deg) と同じ向き・長さ
+    const ang = 160 * Math.PI / 180, dx = Math.sin(ang), dy = -Math.cos(ang);
+    const half = (Math.abs(W * dx) + Math.abs(H * dy)) / 2;
+    const bg = g.createLinearGradient(W / 2 - dx * half, H / 2 - dy * half, W / 2 + dx * half, H / 2 + dy * half);
+    bg.addColorStop(0, from); bg.addColorStop(1, to);
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
     const font = getComputedStyle(document.body).fontFamily;
     const F = (size, w) => `${w || 400} ${size}px ${font}`;
     const fit = (text, max) => { if (g.measureText(text).width <= max) return text; let t = text; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t + '…'; };
-    g.textBaseline = 'alphabetic';
-    let y = P + 40;
-    g.fillStyle = '#c9ced6'; g.font = F(36, 700); g.fillText(data.date, P, y);
-    y += 100; g.fillStyle = acc; g.font = F(84, 700); g.fillText(fit(data.label, W - P * 2), P, y);
-    y += 40; g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(P, y, W - P * 2, 2);
-    // 種目（8つまで）
-    const shown = data.items.slice(0, 8);
-    y += 30;
-    g.font = F(36, 400);
-    shown.forEach((it) => {
-      y += 62;
-      g.font = F(34, 400); g.fillStyle = '#c9ced6';
+    const round = (x, y, w, h, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); };
+    const WHITE = '#ffffff', SUB = 'rgba(255,255,255,.9)';
+    // 字間をつめて書く（canvas の letterSpacing がない古い端末でも同じ見た目に）
+    const spacedWidth = (t, sp) => [...t].reduce((a, ch) => a + g.measureText(ch).width + sp, 0) - sp;
+    const drawSpaced = (t, x, y, sp) => { [...t].forEach((ch) => { g.fillText(ch, x, y); x += g.measureText(ch).width + sp; }); return x; };
+    g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+    // 1. 日付・メニュー名
+    let y = P + 30;
+    g.fillStyle = SUB; g.font = F(34, 700);
+    g.fillText(fit(`${data.date}・${data.label}`, W - P * 2), P, y);
+    // 2. 見出し
+    const hasVol = data.volume > 0;
+    y += 40 + 52;
+    g.fillStyle = SUB; g.font = F(40, 700);
+    g.fillText(hasVol ? `${data.thisDay}の総挙上量` : `${data.thisDay}のセット数`, P, y);
+    // 3. 大きな数字（入らなければ縮める）
+    const big = hasVol ? data.volume.toLocaleString('ja-JP') : String(data.sets);
+    const unit = hasVol ? 'kg' : 'セット';
+    let size = 200;
+    const total = () => { g.font = F(size, 800); const bw = spacedWidth(big, -6 * size / 200); g.font = F(72 * size / 200, 700); return bw + 14 + g.measureText(unit).width; };
+    while (total() > W - P * 2 && size > 80) size -= 4;
+    y += 20 + Math.round(size * 0.86);
+    g.fillStyle = WHITE; g.font = F(size, 800);
+    const ex = drawSpaced(big, P - 4, y, -6 * size / 200);
+    g.font = F(Math.round(72 * size / 200), 700); g.fillText(unit, ex + 14, y);
+    // 4. 丸ラベル3つ
+    y += 36 + 30;
+    g.font = F(34, 700);
+    let x = P;
+    [hasVol ? `${data.sets} セット` : null, `${data.items.length} 種目`, `${data.thisWeek ? '今週' : 'この週'} ${data.week} / ${data.planned} 回`].filter(Boolean).forEach((t) => {
+      const w = g.measureText(t).width + 60;
+      g.fillStyle = 'rgba(255,255,255,.18)'; round(x, y, w, 76, 38); g.fill();
+      g.fillStyle = WHITE; g.textBaseline = 'middle'; g.fillText(t, x + 30, y + 39); g.textBaseline = 'alphabetic';
+      x += w + 16;
+    });
+    y += 76;
+    // 6. いちばん下：アイコン・名前・URL（先に位置を決める）
+    const is = 72, iy = H - P - is;
+    // 5. 種目一覧のパネル（下の空きを埋める）
+    const py = y + 56, ph = iy - 40 - py;
+    g.fillStyle = 'rgba(0,0,0,.24)'; round(P, py, W - P * 2, ph, 36); g.fill();
+    const inner = W - P * 2 - 80;
+    const rows = data.items.slice(0, 8);
+    const extra = data.items.length > 8 ? data.items.length - 8 : 0;
+    const rowH = Math.min(63, (ph - 72) / (rows.length + (extra ? 1 : 0) || 1));
+    let ry = py + 36 + 34;
+    rows.forEach((it) => {
+      g.font = F(32, 400); g.fillStyle = SUB;
       const st = shareSetsText(it.sets);
-      const stw = Math.min(g.measureText(st).width, (W - P * 2) * 0.62);
-      g.textAlign = 'right'; g.fillText(fit(st, (W - P * 2) * 0.62), W - P, y); g.textAlign = 'left';
-      g.font = F(36, 700); g.fillStyle = '#ffffff'; g.fillText(fit(it.name, W - P * 2 - stw - 28), P, y);
+      const stt = fit(st, inner * 0.6);
+      const stw = g.measureText(stt).width;
+      g.textAlign = 'right'; g.fillText(stt, W - P - 40, ry); g.textAlign = 'left';
+      g.font = F(32, 700); g.fillStyle = WHITE; g.fillText(fit(it.name, inner - stw - 24), P + 40, ry);
+      ry += rowH;
     });
-    if (data.items.length > 8) { y += 58; g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(`ほか ${data.items.length - 8} 種目`, P, y); }
-    // 合計と今週
-    const by = H - P - 300;
-    g.fillStyle = 'rgba(255,255,255,.08)';
-    if (g.roundRect) { g.beginPath(); g.roundRect(P, by, W - P * 2, 180, 36); g.fill(); } else g.fillRect(P, by, W - P * 2, 180);
-    const col = (W - P * 2) / 3;
-    [[`${data.sets}`, 'セット'], [data.volume.toLocaleString('ja-JP'), 'kg 総挙上量'], [`${data.week} / ${data.planned}`, `${data.thisWeek ? '今週' : 'この週'}の回数`]].forEach(([v, u], i) => {
-      const cx = P + col * i + col / 2;
-      g.textAlign = 'center';
-      g.font = F(v.length > 7 ? 46 : 58, 700); g.fillStyle = '#ffffff'; g.fillText(v, cx, by + 92);
-      g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(u, cx, by + 144);
-    });
-    g.textAlign = 'left';
-    // いちばん下：アイコン・名前・URL
-    const iy = H - P - 80, is = 80;
-    if (iconImg) {
-      g.save(); g.beginPath();
-      if (g.roundRect) g.roundRect(P, iy, is, is, 20); else g.rect(P, iy, is, is);
-      g.clip(); g.drawImage(iconImg, P, iy, is, is); g.restore();
-    } else {
-    g.fillStyle = acc;
-    if (g.roundRect) { g.beginPath(); g.roundRect(P, iy, is, is, 20); g.fill(); } else g.fillRect(P, iy, is, is);
-    g.strokeStyle = '#0c0d10'; g.lineWidth = 6; g.lineCap = 'round';
-    for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(P + is / 2, iy + is / 2, 26, i * Math.PI / 2 + 0.25, (i + 1) * Math.PI / 2 - 0.25); g.stroke(); }
-    g.beginPath(); g.moveTo(P + 28, iy + 40); g.lineTo(P + 52, iy + 40); g.stroke();
+    if (extra) { g.font = F(32, 400); g.fillStyle = SUB; g.fillText(`ほか ${extra} 種目`, P + 40, ry); }
+    // アイコン（テーマ色のもの。なければ簡単な形で描く）に白い縁取り
+    g.save(); round(P, iy, is, is, 16); g.clip();
+    if (iconImg) g.drawImage(iconImg, P, iy, is, is);
+    else {
+      g.fillStyle = from; g.fillRect(P, iy, is, is);
+      g.strokeStyle = WHITE; g.lineWidth = 6; g.lineCap = 'round';
+      for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(P + is / 2, iy + is / 2, 23, i * Math.PI / 2 + 0.25, (i + 1) * Math.PI / 2 - 0.25); g.stroke(); }
+      g.beginPath(); g.moveTo(P + 25, iy + 36); g.lineTo(P + 47, iy + 36); g.stroke();
     }
-    g.font = F(36, 700); g.fillStyle = '#ffffff'; g.fillText(APP_NAME, P + is + 24, iy + 36);
-    g.font = F(32, 400); g.fillStyle = '#c9ced6'; g.fillText(APP_URL, P + is + 24, iy + 76);
+    g.restore();
+    g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; round(P + 1, iy + 1, is - 2, is - 2, 15); g.stroke();
+    g.fillStyle = WHITE; g.font = F(34, 700); g.fillText(APP_NAME, P + is + 22, iy + 32);
+    g.fillStyle = 'rgba(255,255,255,.8)'; g.font = F(26, 400); g.fillText(APP_URL, P + is + 22, iy + 66);
     return cv;
   }
   async function shareToday() {
@@ -1107,9 +1135,10 @@
     const data = shareData(k);
     // ホーム画面用のアイコン（スマホ版にだけある）を使う。読めなければ簡単な形で描く
     const iconImg = await new Promise((res) => {
-      const link = document.querySelector('link[rel="apple-touch-icon"]');
-      if (!link) { res(null); return; }
-      const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = link.href;
+      if (!document.querySelector('link[rel="apple-touch-icon"]')) { res(null); return; }
+      const id = (state.theme && state.theme.accent) || 'blue';
+      const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null);
+      im.src = id === 'blue' ? 'icon-192.png' : `icons/icon-${id}-192.png`;
     });
     const cv = drawShareImage(data, iconImg);
     const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
